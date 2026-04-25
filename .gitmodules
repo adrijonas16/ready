@@ -1,0 +1,3 @@
+[submodule "frontend/utiles-web"]
+	path = frontend/utiles-web
+	url = https://github.com/adrijonas16/utiles-web.git
