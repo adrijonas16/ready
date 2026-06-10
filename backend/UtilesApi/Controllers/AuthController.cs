@@ -95,7 +95,26 @@ public class AuthController : ControllerBase
             return null;
         return userId;
     }
+
+    [HttpGet("users")]
+    public async Task<IActionResult> GetAllUsers()
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        var users = await Dapper.SqlMapper.QueryAsync<dynamic>(conn,
+            "SELECT id, email, name, phone, address, role::text as role, created_at FROM users ORDER BY created_at DESC");
+        return Ok(ApiResponse<object>.Ok(users));
+    }
+
+    [HttpPut("users/{id}/role")]
+    public async Task<IActionResult> UpdateUserRole(Guid id, [FromBody] UpdateRoleRequest req)
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE users SET role = @Role WHERE id = @Id", new { Id = id, req.Role });
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
 }
+
+public class UpdateRoleRequest { public string Role { get; set; } = "USER"; }
 
 [ApiController]
 [Route("api/schools")]
@@ -163,6 +182,31 @@ public class SchoolsController : ControllerBase
 
         var id = await _schoolRepo.Create(school);
         return Ok(ApiResponse<Guid>.Ok(id));
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateSchool(Guid id, [FromBody] CreateSchoolRequest request)
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE schools SET name = @Name, address = @Address WHERE id = @Id",
+            new { Id = id, request.Name, request.Address });
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteSchool(Guid id)
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        await Dapper.SqlMapper.ExecuteAsync(conn, "DELETE FROM grades WHERE school_id = @Id; DELETE FROM schools WHERE id = @Id", new { Id = id });
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpDelete("{id}/grades/{gradeId}")]
+    public async Task<IActionResult> DeleteGrade(Guid id, Guid gradeId)
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        await Dapper.SqlMapper.ExecuteAsync(conn, "DELETE FROM grades WHERE id = @Id", new { Id = gradeId });
+        return Ok(ApiResponse<bool>.Ok(true));
     }
 
     [HttpPost("{id}/grades")]
