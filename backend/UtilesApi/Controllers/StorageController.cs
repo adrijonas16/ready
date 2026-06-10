@@ -21,7 +21,7 @@ public class StorageController : ControllerBase
     public async Task<IActionResult> GetUsage()
     {
         var accountId = _config["R2:AccountId"] ?? "";
-        var token = "";
+        var token = _config["R2:ApiToken"] ?? "";
         var bucketName = _config["R2:BucketName"] ?? "ready-utiles";
 
         using var client = new HttpClient();

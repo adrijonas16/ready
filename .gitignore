@@ -11,3 +11,5 @@ build/
 backend/UtilesApi/bin/
 backend/UtilesApi/obj/
 backend/UtilesApi/utiles.db
+backend/UtilesApi/appsettings.Development.json
+backend/UtilesApi/uploads/
