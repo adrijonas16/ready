@@ -32,7 +32,9 @@ public class ProductsController : ControllerBase
             BasePrice = p.BasePrice,
             ImageUrl = p.ImageUrl,
             Stock = p.Stock,
-            Attributes = p.Attributes
+            Attributes = p.Attributes,
+            Rating = p.Rating,
+            Tier = p.Tier
         })));
     }
 
@@ -55,7 +57,9 @@ public class ProductsController : ControllerBase
             BasePrice = p.BasePrice,
             ImageUrl = p.ImageUrl,
             Stock = p.Stock,
-            Attributes = p.Attributes
+            Attributes = p.Attributes,
+            Rating = p.Rating,
+            Tier = p.Tier
         })));
     }
 
@@ -67,24 +71,38 @@ public class ProductsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<ApiResponse<ProductResponse>>> GetById(Guid id)
+    public async Task<ActionResult<ApiResponse<object>>> GetById(Guid id)
     {
         var product = await _productRepo.GetById(id);
         if (product == null)
-            return NotFound(ApiResponse<ProductResponse>.Fail("NOT_FOUND", "Producto no encontrado"));
+            return NotFound(ApiResponse<object>.Fail("NOT_FOUND", "Producto no encontrado"));
 
-        return Ok(ApiResponse<ProductResponse>.Ok(new ProductResponse
+        // Get variants
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        var variantTypes = await Dapper.SqlMapper.QueryAsync<dynamic>(conn, @"
+            SELECT id, name, display_order FROM product_variant_types
+            WHERE product_id = @Id ORDER BY display_order", new { Id = id });
+
+        var variants = new List<object>();
+        foreach (var vt in variantTypes)
         {
-            Id = product.Id,
-            Name = product.Name,
-            Description = product.Description,
-            Category = product.Category,
-            Brand = product.Brand,
-            Sku = product.Sku,
-            BasePrice = product.BasePrice,
-            ImageUrl = product.ImageUrl,
-            Stock = product.Stock,
-            Attributes = product.Attributes
+            var values = await Dapper.SqlMapper.QueryAsync<dynamic>(conn, @"
+                SELECT id, value, image_url, price_modifier, stock, display_order, is_active, color_hex
+                FROM product_variant_values WHERE variant_type_id = @TypeId ORDER BY display_order",
+                new { TypeId = (Guid)vt.id });
+            variants.Add(new { id = vt.id, name = vt.name, displayOrder = vt.display_order, values });
+        }
+
+        var images = await Dapper.SqlMapper.QueryAsync<dynamic>(conn, @"
+            SELECT id, image_url, alt_text, display_order, is_primary
+            FROM product_images WHERE product_id = @Id ORDER BY display_order", new { Id = id });
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            product.Id, product.Name, product.Description, product.Category, product.Brand,
+            product.Sku, product.BasePrice, product.ImageUrl, product.Stock, product.Attributes,
+            product.Rating, product.Tier, product.SaleUnit, product.UnitQuantity,
+            variants, images
         }));
     }
 

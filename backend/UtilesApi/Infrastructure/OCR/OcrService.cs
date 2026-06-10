@@ -69,20 +69,67 @@ public class AzureOcrService : IOcrService
 
 public class MockOcrService : IOcrService
 {
-    public async Task<OcrResult> ExtractTextAsync(string imageUrl)
+    private static readonly List<List<ParsedItem>> _sampleLists = new()
     {
-        // Return mock data for development
-        return await Task.FromResult(new OcrResult
+        new() // Primaria basico
         {
-            RawText = "Lista de útiles escolares",
+            new() { Name = "Cuaderno A4 rayado 100 hojas", Quantity = 3 },
+            new() { Name = "Cuaderno A4 cuadriculado 100 hojas", Quantity = 2 },
+            new() { Name = "Lapiz HB N2", Quantity = 4 },
+            new() { Name = "Colores x12 largos", Quantity = 1 },
+            new() { Name = "Borrador blanco", Quantity = 2 },
+            new() { Name = "Regla 30cm", Quantity = 1 },
+            new() { Name = "Tajador doble", Quantity = 1 },
+            new() { Name = "Goma en barra 40g", Quantity = 2 },
+            new() { Name = "Tijera punta redonda", Quantity = 1 },
+            new() { Name = "Block dibujo A4", Quantity = 1 },
+            new() { Name = "Temperas x12", Quantity = 1 },
+            new() { Name = "Folder manila A4", Quantity = 1 },
+            new() { Name = "Forro transparente A4", Quantity = 2 },
+        },
+        new() // Inicial
+        {
+            new() { Name = "Cuaderno triple renglon 100 hojas", Quantity = 2 },
+            new() { Name = "Cuaderno A4 cuadriculado 100 hojas", Quantity = 1 },
+            new() { Name = "Lapiz HB N2", Quantity = 6 },
+            new() { Name = "Colores x12 cortos", Quantity = 1 },
+            new() { Name = "Crayones x12 gruesos", Quantity = 1 },
+            new() { Name = "Plasticina x12", Quantity = 1 },
+            new() { Name = "Borrador blanco", Quantity = 2 },
+            new() { Name = "Goma en barra 20g", Quantity = 2 },
+            new() { Name = "Tijera punta redonda", Quantity = 1 },
+            new() { Name = "Plumones x12 punta gruesa", Quantity = 1 },
+            new() { Name = "Block dibujo A4", Quantity = 2 },
+        },
+        new() // Secundaria
+        {
+            new() { Name = "Cuaderno A4 cuadriculado 200 hojas", Quantity = 5 },
+            new() { Name = "Cuaderno A4 rayado 100 hojas", Quantity = 3 },
+            new() { Name = "Lapiz HB N2", Quantity = 3 },
+            new() { Name = "Lapiz rojo-azul bicolor", Quantity = 2 },
+            new() { Name = "Colores x24 largos", Quantity = 1 },
+            new() { Name = "Borrador blanco", Quantity = 1 },
+            new() { Name = "Regla 30cm", Quantity = 1 },
+            new() { Name = "Goma en barra 40g", Quantity = 1 },
+            new() { Name = "Folder plastico A4", Quantity = 10 },
+            new() { Name = "Papel bond A4 x500", Quantity = 1 },
+        },
+    };
+
+    public Task<OcrResult> ExtractTextAsync(string imageUrl)
+    {
+        // Pick a random sample list to simulate variety
+        var random = new Random();
+        var items = _sampleLists[random.Next(_sampleLists.Count)];
+
+        var rawText = "Lista de utiles escolares\n" + string.Join("\n", items.Select(i => $"- {i.Quantity} {i.Name}"));
+
+        return Task.FromResult(new OcrResult
+        {
+            RawText = rawText,
             ParsedData = new ParsedListData
             {
-                Items = new List<ParsedItem>
-                {
-                    new() { Name = "Cuaderno", Quantity = 3 },
-                    new() { Name = "Lápiz", Quantity = 6 },
-                    new() { Name = "Goma", Quantity = 1 }
-                }
+                Items = items,
             }
         });
     }

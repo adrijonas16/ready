@@ -18,8 +18,8 @@ public class LocalStorageService : IStorageService
     public LocalStorageService(IConfiguration configuration)
     {
         _basePath = configuration["Storage:LocalPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
-        _baseUrl = configuration["Storage:BaseUrl"] ?? "http://localhost:5000/uploads";
-        
+        _baseUrl = configuration["Storage:BaseUrl"] ?? "http://localhost:5050/uploads";
+
         if (!Directory.Exists(_basePath))
             Directory.CreateDirectory(_basePath);
     }
@@ -28,10 +28,10 @@ public class LocalStorageService : IStorageService
     {
         var fileKey = $"{Guid.NewGuid()}_{Path.GetFileName(fileName)}";
         var filePath = Path.Combine(_basePath, fileKey);
-        
+
         await using var outputStream = File.Create(filePath);
         await fileStream.CopyToAsync(outputStream);
-        
+
         return $"{_baseUrl}/{fileKey}";
     }
 
@@ -49,6 +49,62 @@ public class LocalStorageService : IStorageService
     }
 }
 
+public class R2StorageService : IStorageService
+{
+    private readonly IAmazonS3 _s3Client;
+    private readonly string _bucketName;
+    private readonly string _publicUrl;
+
+    public R2StorageService(IConfiguration configuration)
+    {
+        var accountId = configuration["R2:AccountId"] ?? "";
+        var accessKeyId = configuration["R2:AccessKeyId"] ?? "";
+        var secretAccessKey = configuration["R2:SecretAccessKey"] ?? "";
+        _bucketName = configuration["R2:BucketName"] ?? "ready-utiles";
+        _publicUrl = configuration["R2:PublicUrl"] ?? $"https://pub-{accountId}.r2.dev";
+
+        var config = new AmazonS3Config
+        {
+            ServiceURL = $"https://{accountId}.r2.cloudflarestorage.com",
+            ForcePathStyle = true,
+        };
+
+        _s3Client = new AmazonS3Client(accessKeyId, secretAccessKey, config);
+    }
+
+    public async Task<string> UploadFileAsync(Stream fileStream, string fileName, string contentType)
+    {
+        var fileKey = $"lists/{Guid.NewGuid()}_{Path.GetFileName(fileName)}";
+
+        // R2 doesn't support chunked transfer — read stream into memory first
+        using var memoryStream = new MemoryStream();
+        await fileStream.CopyToAsync(memoryStream);
+        memoryStream.Position = 0;
+
+        var request = new PutObjectRequest
+        {
+            BucketName = _bucketName,
+            Key = fileKey,
+            InputStream = memoryStream,
+            ContentType = contentType,
+            DisablePayloadSigning = true,
+        };
+
+        await _s3Client.PutObjectAsync(request);
+        return $"{_publicUrl}/{fileKey}";
+    }
+
+    public Task<string> GetFileUrl(string fileKey)
+    {
+        return Task.FromResult($"{_publicUrl}/{fileKey}");
+    }
+
+    public async Task DeleteFile(string fileKey)
+    {
+        await _s3Client.DeleteObjectAsync(_bucketName, fileKey);
+    }
+}
+
 public class S3StorageService : IStorageService
 {
     private readonly IAmazonS3 _s3Client;
@@ -63,7 +119,7 @@ public class S3StorageService : IStorageService
     public async Task<string> UploadFileAsync(Stream fileStream, string fileName, string contentType)
     {
         var fileKey = $"lists/{Guid.NewGuid()}_{Path.GetFileName(fileName)}";
-        
+
         var request = new PutObjectRequest
         {
             BucketName = _bucketName,

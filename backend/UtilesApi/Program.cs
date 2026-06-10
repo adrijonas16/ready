@@ -5,6 +5,9 @@ using UtilesApi.Infrastructure.Database;
 using UtilesApi.Infrastructure.OCR;
 using UtilesApi.Infrastructure.Storage;
 using UtilesApi.Services;
+using UtilesApi.Infrastructure.Database;
+
+Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,9 +28,16 @@ builder.Services.AddScoped<OrderRepository>();
 builder.Services.AddScoped<OrderItemRepository>();
 builder.Services.AddScoped<AdditionalCostRepository>();
 
-builder.Services.AddSingleton<IStorageService, LocalStorageService>();
+var storageProvider = builder.Configuration["Storage:Provider"] ?? "local";
+if (storageProvider == "r2")
+    builder.Services.AddSingleton<IStorageService, R2StorageService>();
+else
+    builder.Services.AddSingleton<IStorageService, LocalStorageService>();
 builder.Services.AddSingleton<IOcrService, MockOcrService>();
 builder.Services.AddSingleton<ListParserService>();
+
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<INotificationService, NotificationService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IProductMatchingService, ProductMatchingService>();
@@ -86,6 +96,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<NotificationHub>("/hub/notifications");
 
 app.UseStaticFiles();
 

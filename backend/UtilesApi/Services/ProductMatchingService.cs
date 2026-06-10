@@ -6,7 +6,7 @@ namespace UtilesApi.Services;
 
 public interface IProductMatchingService
 {
-    Task<Product?> FindBestMatch(string itemName, string? category = null);
+    Task<Product?> FindBestMatch(string itemName, string? preferredTier = "medio");
     Task<List<(Product Product, int Score)>> FindMultipleMatches(string itemName, int limit = 5, string? category = null);
 }
 
@@ -19,91 +19,97 @@ public class ProductMatchingService : IProductMatchingService
         _productRepo = productRepo;
     }
 
-    public async Task<Product?> FindBestMatch(string itemName, string? category = null)
+    public async Task<Product?> FindBestMatch(string itemName, string? preferredTier = "medio")
     {
-        var matches = await FindMultipleMatches(itemName, 5, category);
-        return matches.FirstOrDefault().Product;
+        var products = await _productRepo.GetAll();
+        var itemWords = Tokenize(itemName);
+
+        var scored = new List<(Product product, int score)>();
+
+        foreach (var product in products)
+        {
+            var productWords = Tokenize(product.Name);
+            var score = ScoreMatch(itemWords, productWords);
+
+            // Bonus for matching tier
+            if (product.Tier == preferredTier) score += 10;
+
+            if (score > 20) scored.Add((product, score));
+        }
+
+        return scored.OrderByDescending(s => s.score).FirstOrDefault().product;
     }
 
     public async Task<List<(Product Product, int Score)>> FindMultipleMatches(string itemName, int limit = 5, string? category = null)
     {
         var products = await _productRepo.GetAll(category);
-        var result = new List<(Product Product, int Score)>();
+        var itemWords = Tokenize(itemName);
 
-        var normalizedItemName = Normalize(itemName);
+        var result = new List<(Product Product, int Score)>();
 
         foreach (var product in products)
         {
-            var score = CalculateSimilarity(normalizedItemName, Normalize(product.Name));
-            
-            if (score > 0)
-            {
-                result.Add((product, score));
-            }
+            var score = ScoreMatch(itemWords, Tokenize(product.Name));
+            if (score > 10) result.Add((product, score));
         }
 
-        return result
-            .OrderByDescending(r => r.Score)
-            .Take(limit)
-            .ToList();
+        return result.OrderByDescending(r => r.Score).Take(limit).ToList();
     }
 
-    private int CalculateSimilarity(string s1, string s2)
+    private int ScoreMatch(string[] itemWords, string[] productWords)
     {
-        if (s1 == s2) return 100;
-        
-        var words1 = s1.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var words2 = s2.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        int score = 0;
+        int matched = 0;
 
-        int matchedWords = 0;
-        int totalWords = Math.Max(words1.Length, words2.Length);
-
-        foreach (var word1 in words1)
+        foreach (var iw in itemWords)
         {
-            foreach (var word2 in words2)
+            if (iw.Length < 2) continue;
+
+            foreach (var pw in productWords)
             {
-                if (LevenshteinDistance(word1, word2) <= 2)
+                if (pw.Length < 2) continue;
+
+                // Exact match
+                if (iw == pw) { score += 30; matched++; break; }
+
+                // Contained
+                if (pw.Contains(iw) || iw.Contains(pw))
                 {
-                    matchedWords++;
+                    score += 20;
+                    matched++;
                     break;
                 }
-                if (word2.Contains(word1) || word1.Contains(word2))
+
+                // Close Levenshtein
+                if (iw.Length > 3 && pw.Length > 3 && LevenshteinDistance(iw, pw) <= 2)
                 {
-                    matchedWords++;
+                    score += 15;
+                    matched++;
                     break;
                 }
             }
         }
 
-        var wordScore = totalWords > 0 ? (matchedWords * 100) / totalWords : 0;
+        // Penalize if few words matched
+        if (itemWords.Length > 0)
+        {
+            var matchRatio = (double)matched / itemWords.Length;
+            score = (int)(score * matchRatio);
+        }
 
-        var lengthPenalty = Math.Abs(s1.Length - s2.Length) * 2;
-        var finalScore = Math.Max(0, wordScore - lengthPenalty);
-
-        return finalScore;
+        return score;
     }
 
-    private string Normalize(string text)
+    private string[] Tokenize(string text)
     {
         return text.ToLower()
-            .Replace("cuaderno", "")
-            .Replace("lapiz", "")
-            .Replace("lapices", "")
-            .Replace("colores", "")
-            .Replace("grafito", "")
-            .Replace("gom", "")
-            .Replace("regla", "")
-            .Replace("pegamento", "")
-            .Replace("block", "")
-            .Replace("cuadriculado", "")
-            .Replace("college", "")
-            .Replace("7mm", "")
-            .Replace("mm", "")
-            .Replace("cm", "")
             .Replace("-", " ")
             .Replace("(", " ")
             .Replace(")", " ")
-            .Trim();
+            .Replace(",", " ")
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length >= 2)
+            .ToArray();
     }
 
     private int LevenshteinDistance(string s1, string s2)
@@ -111,21 +117,14 @@ public class ProductMatchingService : IProductMatchingService
         var m = s1.Length;
         var n = s2.Length;
         var d = new int[m + 1, n + 1];
-
         for (var i = 0; i <= m; i++) d[i, 0] = i;
         for (var j = 0; j <= n; j++) d[0, j] = j;
-
         for (var i = 1; i <= m; i++)
-        {
             for (var j = 1; j <= n; j++)
             {
                 var cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
-                d[i, j] = Math.Min(
-                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
-                    d[i - 1, j - 1] + cost);
+                d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + cost);
             }
-        }
-
         return d[m, n];
     }
 }
@@ -155,7 +154,7 @@ public class ListProcessingService
         if (list == null) return;
 
         var ocrResult = await _ocrService.ExtractTextAsync(list.ImageUrl ?? "");
-        
+
         list.OcrText = ocrResult.RawText;
         if (ocrResult.ParsedData != null)
         {
@@ -164,6 +163,8 @@ public class ListProcessingService
         }
 
         await _listRepo.Update(list);
+
+        var preferredTier = list.Plan ?? "medio";
 
         if (ocrResult.ParsedData != null)
         {
@@ -181,10 +182,11 @@ public class ListProcessingService
                     UpdatedAt = DateTime.UtcNow
                 };
 
-                var matchedProduct = await _matchingService.FindBestMatch(item.Name);
+                var matchedProduct = await _matchingService.FindBestMatch(item.Name, preferredTier);
                 if (matchedProduct != null)
                 {
                     supplyItem.MatchedProductId = matchedProduct.Id;
+                    supplyItem.NombreDetectado = matchedProduct.Name;
                     supplyItem.MatchedQuantity = item.Quantity;
                     supplyItem.PriceAtMatch = matchedProduct.BasePrice;
                 }
@@ -196,16 +198,19 @@ public class ListProcessingService
 
     public async Task ProcessMatching(Guid listId)
     {
+        var list = await _listRepo.GetById(listId);
+        var preferredTier = list?.Plan ?? "medio";
         var items = await _itemRepo.GetByListId(listId);
-        
+
         foreach (var item in items)
         {
             if (item.MatchedProductId == null)
             {
-                var matchedProduct = await _matchingService.FindBestMatch(item.NombreOriginal);
+                var matchedProduct = await _matchingService.FindBestMatch(item.NombreOriginal, preferredTier);
                 if (matchedProduct != null)
                 {
                     item.MatchedProductId = matchedProduct.Id;
+                    item.NombreDetectado = matchedProduct.Name;
                     item.MatchedQuantity = item.Cantidad;
                     item.PriceAtMatch = matchedProduct.BasePrice;
                     await _itemRepo.Update(item);

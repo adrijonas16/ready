@@ -57,6 +57,10 @@ public class SupplyList
     public DateTime? FechaSubida { get; set; }
     public DateTime? FechaInicioRevision { get; set; }
     public DateTime? FechaValidacion { get; set; }
+    public string? UserObservaciones { get; set; }
+    public string? Plan { get; set; }
+    public string? EstudianteNombre { get; set; }
+    public string? EstudianteGrado { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -86,6 +90,13 @@ public class SupplyItem
     public DateTime UpdatedAt { get; set; }
     public int? UserCustomQuantity { get; set; }
     public string? UserNotas { get; set; }
+    public bool Forro { get; set; }
+    public string? ForroColor { get; set; }
+    public string? Etiqueta { get; set; }
+    public bool EtiquetaDibujo { get; set; }
+    public bool Caratula { get; set; }
+    public string? CaratulaCurso { get; set; }
+    public string? DatosEstudiante { get; set; }
 }
 
 public class Product
@@ -101,6 +112,10 @@ public class Product
     public int Stock { get; set; }
     public string? Attributes { get; set; }
     public bool IsActive { get; set; } = true;
+    public decimal Rating { get; set; } = 4.0m;
+    public string Tier { get; set; } = "medio";
+    public string SaleUnit { get; set; } = "unidad";
+    public int UnitQuantity { get; set; } = 1;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

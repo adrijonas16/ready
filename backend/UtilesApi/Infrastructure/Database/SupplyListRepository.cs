@@ -232,6 +232,13 @@ public class SupplyItemRepository
                 price_at_match = @PriceAtMatch,
                 user_custom_quantity = @UserCustomQuantity,
                 user_notas = @UserNotas,
+                forro = @Forro,
+                forro_color = @ForroColor,
+                etiqueta = @Etiqueta,
+                etiqueta_dibujo = @EtiquetaDibujo,
+                caratula = @Caratula,
+                caratula_curso = @CaratulaCurso,
+                datos_estudiante = @DatosEstudiante,
                 updated_at = NOW()
             WHERE id = @Id", item);
     }

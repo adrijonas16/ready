@@ -49,10 +49,18 @@ public class ListsController : ControllerBase
 
         var imageUrl = await _storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
 
+        // Validate user exists, set null if not found
+        Guid? validUserId = null;
+        if (userId != Guid.Empty)
+        {
+            var userRepo = HttpContext.RequestServices.GetRequiredService<UserRepository>();
+            var existingUser = await userRepo.GetById(userId);
+            if (existingUser != null) validUserId = userId;
+        }
+
         var list = new SupplyList
         {
-            Id = Guid.NewGuid(),
-            UserId = userId,
+            UserId = validUserId,
             SchoolId = schoolId,
             GradeId = gradeId,
             Year = year,
@@ -65,14 +73,22 @@ public class ListsController : ControllerBase
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _listRepo.Create(list);
+        var createdId = await _listRepo.Create(list);
+        list.Id = createdId;
+
+        // Process OCR and match products in background
+        _ = Task.Run(async () =>
+        {
+            try { await _processingService.ProcessList(createdId); }
+            catch (Exception ex) { Console.WriteLine($"OCR processing error: {ex.Message}"); }
+        });
 
         var school = await _schoolRepo.GetById(schoolId);
         var grade = await _gradeRepo.GetById(gradeId);
 
         return Ok(ApiResponse<ListResponse>.Ok(new ListResponse
         {
-            Id = list.Id,
+            Id = createdId,
             UserId = list.UserId,
             SchoolId = list.SchoolId,
             SchoolName = school?.Name ?? "",
@@ -121,6 +137,9 @@ public class ListsController : ControllerBase
                 EsOficial = list.EsOficial,
                 Observaciones = list.Observaciones,
                 SubmittedBy = list.SubmittedBy,
+                Plan = list.Plan,
+                EstudianteNombre = list.EstudianteNombre,
+                EstudianteGrado = list.EstudianteGrado,
                 FechaSubida = list.FechaSubida,
                 FechaInicioRevision = list.FechaInicioRevision,
                 FechaValidacion = list.FechaValidacion,
@@ -148,9 +167,18 @@ public class ListsController : ControllerBase
                         Sku = matchedProducts[i.MatchedProductId.Value].Sku,
                         BasePrice = matchedProducts[i.MatchedProductId.Value].BasePrice,
                         ImageUrl = matchedProducts[i.MatchedProductId.Value].ImageUrl,
-                        Stock = matchedProducts[i.MatchedProductId.Value].Stock
+                        Stock = matchedProducts[i.MatchedProductId.Value].Stock,
+                        Rating = matchedProducts[i.MatchedProductId.Value].Rating,
+                        Tier = matchedProducts[i.MatchedProductId.Value].Tier
                     }
-                    : null
+                    : null,
+                Forro = i.Forro,
+                ForroColor = i.ForroColor,
+                Etiqueta = i.Etiqueta,
+                EtiquetaDibujo = i.EtiquetaDibujo,
+                Caratula = i.Caratula,
+                CaratulaCurso = i.CaratulaCurso,
+                DatosEstudiante = i.DatosEstudiante
             }).ToList()
         }));
     }
@@ -265,8 +293,154 @@ public class ListsController : ControllerBase
         {
             item.UserNotas = request.UserNotas;
         }
+        if (request.Forro.HasValue) item.Forro = request.Forro.Value;
+        if (request.ForroColor != null) item.ForroColor = request.ForroColor;
+        if (request.Etiqueta != null) item.Etiqueta = request.Etiqueta;
+        if (request.EtiquetaDibujo.HasValue) item.EtiquetaDibujo = request.EtiquetaDibujo.Value;
+        if (request.Caratula.HasValue) item.Caratula = request.Caratula.Value;
+        if (request.CaratulaCurso != null) item.CaratulaCurso = request.CaratulaCurso;
+        if (request.DatosEstudiante != null) item.DatosEstudiante = request.DatosEstudiante;
 
         await _itemRepo.Update(item);
         return Ok(ApiResponse<bool>.Ok(true));
     }
+
+    [HttpPut("{id}/plan")]
+    public async Task<ActionResult<ApiResponse<bool>>> UpdatePlan(Guid id, [FromBody] UpdateListPlanRequest request)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+
+        // Update plan and student info
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        await Dapper.SqlMapper.ExecuteAsync(conn, @"
+            UPDATE supply_lists SET plan = @Plan, estudiante_nombre = @Nombre, estudiante_grado = @Grado, updated_at = NOW()
+            WHERE id = @Id", new { Id = id, Plan = request.Plan, Nombre = request.EstudianteNombre, Grado = request.EstudianteGrado });
+
+        // Re-match products based on tier preference
+        var items = await _itemRepo.GetByListId(id);
+        foreach (var item in items)
+        {
+            if (item.MatchedProductId.HasValue)
+            {
+                var currentProduct = await _productRepo.GetById(item.MatchedProductId.Value);
+                if (currentProduct != null && currentProduct.Tier != request.Plan)
+                {
+                    // Find a product in the same category matching the tier
+                    var alternatives = await _productRepo.Search(item.NombreOriginal, null, 20);
+                    var tierMatch = alternatives.FirstOrDefault(p => p.Tier == request.Plan && p.Category == currentProduct.Category)
+                        ?? alternatives.FirstOrDefault(p => p.Tier == request.Plan);
+                    if (tierMatch != null)
+                    {
+                        item.MatchedProductId = tierMatch.Id;
+                        item.PriceAtMatch = tierMatch.BasePrice;
+                        await _itemRepo.Update(item);
+                    }
+                }
+            }
+        }
+
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPost("{id}/observaciones")]
+    public async Task<IActionResult> AddObservacion(Guid id, [FromBody] AddObservacionRequest req)
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        await Dapper.SqlMapper.ExecuteAsync(conn,
+            "UPDATE supply_lists SET user_observaciones = COALESCE(user_observaciones, '') || E'\\n' || @Obs, updated_at = NOW() WHERE id = @Id",
+            new { Id = id, Obs = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm}] {req.Observacion}" });
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPost("from-text")]
+    public async Task<IActionResult> CreateFromText([FromBody] CreateFromTextRequest request)
+    {
+        var school = await _schoolRepo.GetById(request.SchoolId);
+        if (school == null) return BadRequest(ApiResponse<object>.Fail("NOT_FOUND", "Colegio no encontrado"));
+
+        var grade = await _gradeRepo.GetById(request.GradeId);
+        if (grade == null) return BadRequest(ApiResponse<object>.Fail("NOT_FOUND", "Grado no encontrado"));
+
+        // Validate user exists, set null if not
+        Guid? userId = null;
+        if (request.UserId != Guid.Empty)
+        {
+            var userRepo = HttpContext.RequestServices.GetRequiredService<UserRepository>();
+            var existingUser = await userRepo.GetById(request.UserId);
+            if (existingUser != null) userId = request.UserId;
+        }
+
+        var list = new SupplyList
+        {
+            UserId = userId,
+            SchoolId = request.SchoolId,
+            GradeId = request.GradeId,
+            Year = request.Year,
+            Estado = ListStatus.PENDIENTE_REVISION,
+            EsOficial = false,
+            FechaSubida = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        var listId = await _listRepo.Create(list);
+        list.Id = listId;
+
+        foreach (var item in request.Items)
+        {
+            var supplyItem = new SupplyItem
+            {
+                SupplyListId = listId,
+                NombreOriginal = item.NombreOriginal,
+                NombreDetectado = item.NombreOriginal,
+                Cantidad = item.Cantidad > 0 ? item.Cantidad : 1,
+                Notas = item.Notas,
+                CreatedAt = DateTime.UtcNow,
+            };
+            await _itemRepo.Create(supplyItem);
+        }
+
+        // Try auto-matching products
+        _ = Task.Run(async () =>
+        {
+            try { await _processingService.ProcessMatching(listId); }
+            catch { /* best effort */ }
+        });
+
+        return Ok(ApiResponse<ListResponse>.Ok(new ListResponse
+        {
+            Id = list.Id,
+            UserId = list.UserId,
+            SchoolId = list.SchoolId,
+            SchoolName = school.Name,
+            GradeId = list.GradeId,
+            GradeName = grade.Name,
+            Year = list.Year,
+            Estado = list.Estado.ToString(),
+            EsOficial = false,
+            FechaSubida = list.FechaSubida,
+            CreatedAt = list.CreatedAt,
+        }));
+    }
+}
+
+public class CreateFromTextRequest
+{
+    public Guid UserId { get; set; }
+    public Guid SchoolId { get; set; }
+    public Guid GradeId { get; set; }
+    public int Year { get; set; }
+    public List<CreateFromTextItem> Items { get; set; } = new();
+}
+
+public class CreateFromTextItem
+{
+    public string NombreOriginal { get; set; } = "";
+    public int Cantidad { get; set; } = 1;
+    public string? Notas { get; set; }
+}
+
+public class AddObservacionRequest
+{
+    public string Observacion { get; set; } = "";
 }

@@ -48,6 +48,10 @@ public class ListResponse
     public bool EsOficial { get; set; }
     public string? Observaciones { get; set; }
     public string? SubmittedBy { get; set; }
+    public string? UserObservaciones { get; set; }
+    public string? Plan { get; set; }
+    public string? EstudianteNombre { get; set; }
+    public string? EstudianteGrado { get; set; }
     public DateTime? FechaSubida { get; set; }
     public DateTime? FechaInicioRevision { get; set; }
     public DateTime? FechaValidacion { get; set; }
@@ -68,6 +72,13 @@ public class SupplyItemResponse
     public decimal? PriceAtMatch { get; set; }
     public int? UserCustomQuantity { get; set; }
     public string? UserNotas { get; set; }
+    public bool Forro { get; set; }
+    public string? ForroColor { get; set; }
+    public string? Etiqueta { get; set; }
+    public bool EtiquetaDibujo { get; set; }
+    public bool Caratula { get; set; }
+    public string? CaratulaCurso { get; set; }
+    public string? DatosEstudiante { get; set; }
 }
 
 public class ListDetailResponse
@@ -88,6 +99,8 @@ public class ProductResponse
     public string? ImageUrl { get; set; }
     public int Stock { get; set; }
     public string? Attributes { get; set; }
+    public decimal Rating { get; set; }
+    public string Tier { get; set; } = "medio";
 }
 
 public class CreateOrderRequest
@@ -97,6 +110,7 @@ public class CreateOrderRequest
     public List<OrderItemRequest> Items { get; set; } = new();
     public string ShippingAddress { get; set; } = string.Empty;
     public string ShippingPhone { get; set; } = string.Empty;
+    public string? ContactNotes { get; set; }
 }
 
 public class OrderItemRequest
@@ -167,6 +181,20 @@ public class UpdateSupplyItemRequest
     public string? Notas { get; set; }
     public int? UserCustomQuantity { get; set; }
     public string? UserNotas { get; set; }
+    public bool? Forro { get; set; }
+    public string? ForroColor { get; set; }
+    public string? Etiqueta { get; set; }
+    public bool? EtiquetaDibujo { get; set; }
+    public bool? Caratula { get; set; }
+    public string? CaratulaCurso { get; set; }
+    public string? DatosEstudiante { get; set; }
+}
+
+public class UpdateListPlanRequest
+{
+    public string Plan { get; set; } = "medio";
+    public string? EstudianteNombre { get; set; }
+    public string? EstudianteGrado { get; set; }
 }
 
 public class UserRegisterRequest
