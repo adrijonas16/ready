@@ -68,7 +68,7 @@ public class SupplyListRepository
     public async Task<IEnumerable<SupplyList>> GetOfficialLists(Guid? schoolId = null, Guid? gradeId = null)
     {
         using var connection = _db.CreateConnection();
-        var sql = "SELECT * FROM supply_lists WHERE es_oficial = true";
+        var sql = "SELECT * FROM supply_lists WHERE (es_oficial = true OR estado = 'VALIDADA' OR estado = 'PROCESADA')";
         var parameters = new DynamicParameters();
 
         if (schoolId.HasValue)
