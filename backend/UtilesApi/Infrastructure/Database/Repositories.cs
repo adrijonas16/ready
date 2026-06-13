@@ -166,4 +166,27 @@ public class SectionRepository
         using var connection = _db.CreateConnection();
         await connection.ExecuteAsync("DELETE FROM sections WHERE id = @Id", new { Id = id });
     }
+
+    public async Task<IEnumerable<Section>> GetBySchoolId(Guid schoolId)
+    {
+        using var connection = _db.CreateConnection();
+        return await connection.QueryAsync<Section>(@"
+            SELECT s.id as Id, s.group_name as GroupName, s.name as Name, s.sort_order as SortOrder, s.created_at as CreatedAt
+            FROM sections s
+            INNER JOIN school_sections ss ON ss.section_id = s.id
+            WHERE ss.school_id = @SchoolId
+            ORDER BY s.sort_order", new { SchoolId = schoolId });
+    }
+
+    public async Task SetSchoolSections(Guid schoolId, IEnumerable<Guid> sectionIds)
+    {
+        using var connection = _db.CreateConnection();
+        await connection.ExecuteAsync("DELETE FROM school_sections WHERE school_id = @SchoolId", new { SchoolId = schoolId });
+        foreach (var sectionId in sectionIds)
+        {
+            await connection.ExecuteAsync(
+                "INSERT INTO school_sections (school_id, section_id) VALUES (@SchoolId, @SectionId) ON CONFLICT DO NOTHING",
+                new { SchoolId = schoolId, SectionId = sectionId });
+        }
+    }
 }

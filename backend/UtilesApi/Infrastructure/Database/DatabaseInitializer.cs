@@ -144,6 +144,12 @@ public class DatabaseInitializer
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS school_sections (
+                school_id UUID REFERENCES schools(id) ON DELETE CASCADE,
+                section_id UUID REFERENCES sections(id) ON DELETE CASCADE,
+                PRIMARY KEY (school_id, section_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_supply_lists_estado ON supply_lists(estado);
             CREATE INDEX IF NOT EXISTS idx_supply_lists_user_id ON supply_lists(user_id);
             CREATE INDEX IF NOT EXISTS idx_supply_items_list_id ON supply_items(supply_list_id);

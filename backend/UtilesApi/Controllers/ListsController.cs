@@ -38,16 +38,24 @@ public class ListsController : ControllerBase
     }
 
     [HttpPost("upload")]
-    public async Task<ActionResult<ApiResponse<ListResponse>>> Upload([FromForm] IFormFile file, [FromForm] Guid userId, [FromForm] Guid schoolId, [FromForm] Guid gradeId, [FromForm] int year, [FromForm] string? submittedBy)
+    public async Task<ActionResult<ApiResponse<ListResponse>>> Upload([FromForm] List<IFormFile> files, [FromForm] Guid userId, [FromForm] Guid schoolId, [FromForm] Guid gradeId, [FromForm] int year, [FromForm] string? submittedBy)
     {
-        if (file == null || file.Length == 0)
-            return BadRequest(ApiResponse<ListResponse>.Fail("NO_FILE", "Debe subir una imagen"));
+        if (files == null || files.Count == 0)
+            return BadRequest(ApiResponse<ListResponse>.Fail("NO_FILE", "Debe subir al menos una imagen"));
+
+        if (files.Count > 5)
+            return BadRequest(ApiResponse<ListResponse>.Fail("TOO_MANY", "Maximo 5 imagenes"));
 
         var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp" };
-        if (!allowedTypes.Contains(file.ContentType))
-            return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_TYPE", "Solo se permiten imagenes JPEG, PNG o WebP"));
-
-        var imageUrl = await _storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+        var imageUrls = new List<string>();
+        foreach (var file in files)
+        {
+            if (!allowedTypes.Contains(file.ContentType))
+                return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_TYPE", $"Solo se permiten imagenes JPEG, PNG o WebP. Archivo invalido: {file.FileName}"));
+            var url = await _storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+            imageUrls.Add(url);
+        }
+        var imageUrl = string.Join("|", imageUrls);
 
         // Validate user exists, set null if not found
         Guid? validUserId = null;

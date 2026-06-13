@@ -122,11 +122,13 @@ public class SchoolsController : ControllerBase
 {
     private readonly SchoolRepository _schoolRepo;
     private readonly GradeRepository _gradeRepo;
+    private readonly SectionRepository _sectionRepo;
 
-    public SchoolsController(SchoolRepository schoolRepo, GradeRepository gradeRepo)
+    public SchoolsController(SchoolRepository schoolRepo, GradeRepository gradeRepo, SectionRepository sectionRepo)
     {
         _schoolRepo = schoolRepo;
         _gradeRepo = gradeRepo;
+        _sectionRepo = sectionRepo;
     }
 
     [HttpGet]
@@ -209,6 +211,26 @@ public class SchoolsController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    [HttpGet("{id}/sections")]
+    public async Task<ActionResult<ApiResponse<IEnumerable<SectionResponse>>>> GetSchoolSections(Guid id)
+    {
+        var sections = await _sectionRepo.GetBySchoolId(id);
+        return Ok(ApiResponse<IEnumerable<SectionResponse>>.Ok(sections.Select(s => new SectionResponse
+        {
+            Id = s.Id,
+            GroupName = s.GroupName,
+            Name = s.Name,
+            SortOrder = s.SortOrder
+        })));
+    }
+
+    [HttpPut("{id}/sections")]
+    public async Task<IActionResult> SetSchoolSections(Guid id, [FromBody] SetSchoolSectionsRequest request)
+    {
+        await _sectionRepo.SetSchoolSections(id, request.SectionIds);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpPost("{id}/grades")]
     public async Task<ActionResult<ApiResponse<Guid>>> CreateGrade(Guid id, [FromBody] CreateGradeRequest request)
     {
@@ -286,6 +308,11 @@ public class CreateSectionRequest
     public string GroupName { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public int SortOrder { get; set; }
+}
+
+public class SetSchoolSectionsRequest
+{
+    public List<Guid> SectionIds { get; set; } = new();
 }
 
 public class CreateSchoolRequest
