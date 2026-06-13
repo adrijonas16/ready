@@ -123,10 +123,16 @@ public class ListsController : ControllerBase
         var school = await _schoolRepo.GetById(list.SchoolId);
         var grade = await _gradeRepo.GetById(list.GradeId);
 
-        var matchedProductIds = items.Where(i => i.MatchedProductId.HasValue).Select(i => i.MatchedProductId!.Value).Distinct();
-        var matchedProducts = matchedProductIds.Any() 
-            ? (await Task.WhenAll(matchedProductIds.Select(pid => _productRepo.GetById(pid)))).Where(p => p != null).ToDictionary(p => p!.Id, p => p!)
+        var allProductIds = items
+            .SelectMany(i => new[] { i.MatchedProductId, i.ProductEconomicoId, i.ProductMedioId, i.ProductPremiumId })
+            .Where(id => id.HasValue).Select(id => id!.Value).Distinct();
+        var matchedProducts = allProductIds.Any()
+            ? (await Task.WhenAll(allProductIds.Select(pid => _productRepo.GetById(pid)))).Where(p => p != null).ToDictionary(p => p!.Id, p => p!)
             : new Dictionary<Guid, Product>();
+
+        ProductResponse? MapProduct(Guid? id) => id.HasValue && matchedProducts.ContainsKey(id.Value)
+            ? new ProductResponse { Id = matchedProducts[id.Value].Id, Name = matchedProducts[id.Value].Name, Description = matchedProducts[id.Value].Description, Category = matchedProducts[id.Value].Category, Brand = matchedProducts[id.Value].Brand, Sku = matchedProducts[id.Value].Sku, BasePrice = matchedProducts[id.Value].BasePrice, ImageUrl = matchedProducts[id.Value].ImageUrl, Stock = matchedProducts[id.Value].Stock, Rating = matchedProducts[id.Value].Rating, Tier = matchedProducts[id.Value].Tier }
+            : null;
 
         return Ok(ApiResponse<ListDetailResponse>.Ok(new ListDetailResponse
         {
@@ -164,22 +170,16 @@ public class ListsController : ControllerBase
                 MatchedProductId = i.MatchedProductId,
                 MatchedQuantity = i.MatchedQuantity,
                 PriceAtMatch = i.PriceAtMatch,
-                MatchedProduct = i.MatchedProductId.HasValue && matchedProducts.ContainsKey(i.MatchedProductId.Value)
-                    ? new ProductResponse
-                    {
-                        Id = matchedProducts[i.MatchedProductId.Value].Id,
-                        Name = matchedProducts[i.MatchedProductId.Value].Name,
-                        Description = matchedProducts[i.MatchedProductId.Value].Description,
-                        Category = matchedProducts[i.MatchedProductId.Value].Category,
-                        Brand = matchedProducts[i.MatchedProductId.Value].Brand,
-                        Sku = matchedProducts[i.MatchedProductId.Value].Sku,
-                        BasePrice = matchedProducts[i.MatchedProductId.Value].BasePrice,
-                        ImageUrl = matchedProducts[i.MatchedProductId.Value].ImageUrl,
-                        Stock = matchedProducts[i.MatchedProductId.Value].Stock,
-                        Rating = matchedProducts[i.MatchedProductId.Value].Rating,
-                        Tier = matchedProducts[i.MatchedProductId.Value].Tier
-                    }
-                    : null,
+                MatchedProduct = MapProduct(i.MatchedProductId),
+                ProductEconomicoId = i.ProductEconomicoId,
+                ProductEconomico = MapProduct(i.ProductEconomicoId),
+                PriceEconomico = i.PriceEconomico,
+                ProductMedioId = i.ProductMedioId,
+                ProductMedio = MapProduct(i.ProductMedioId),
+                PriceMedio = i.PriceMedio,
+                ProductPremiumId = i.ProductPremiumId,
+                ProductPremium = MapProduct(i.ProductPremiumId),
+                PricePremium = i.PricePremium,
                 Forro = i.Forro,
                 ForroColor = i.ForroColor,
                 Etiqueta = i.Etiqueta,
@@ -316,6 +316,27 @@ public class ListsController : ControllerBase
         if (request.Caratula.HasValue) item.Caratula = request.Caratula.Value;
         if (request.CaratulaCurso != null) item.CaratulaCurso = request.CaratulaCurso;
         if (request.DatosEstudiante != null) item.DatosEstudiante = request.DatosEstudiante;
+        if (request.NombreOriginal != null) item.NombreOriginal = request.NombreOriginal;
+
+        // Tier-specific product assignments
+        if (request.ProductEconomicoId.HasValue)
+        {
+            item.ProductEconomicoId = request.ProductEconomicoId;
+            var p = await _productRepo.GetById(request.ProductEconomicoId.Value);
+            if (p != null) item.PriceEconomico = p.BasePrice;
+        }
+        if (request.ProductMedioId.HasValue)
+        {
+            item.ProductMedioId = request.ProductMedioId;
+            var p = await _productRepo.GetById(request.ProductMedioId.Value);
+            if (p != null) item.PriceMedio = p.BasePrice;
+        }
+        if (request.ProductPremiumId.HasValue)
+        {
+            item.ProductPremiumId = request.ProductPremiumId;
+            var p = await _productRepo.GetById(request.ProductPremiumId.Value);
+            if (p != null) item.PricePremium = p.BasePrice;
+        }
 
         await _itemRepo.Update(item);
         return Ok(ApiResponse<bool>.Ok(true));

@@ -192,6 +192,12 @@ public class SupplyItemRepository
                 price_at_match as PriceAtMatch,
                 user_custom_quantity as UserCustomQuantity,
                 user_notas as UserNotas,
+                product_economico_id as ProductEconomicoId,
+                product_medio_id as ProductMedioId,
+                product_premium_id as ProductPremiumId,
+                price_economico as PriceEconomico,
+                price_medio as PriceMedio,
+                price_premium as PricePremium,
                 created_at as CreatedAt,
                 updated_at as UpdatedAt
             FROM supply_items WHERE supply_list_id = @ListId",
@@ -239,6 +245,12 @@ public class SupplyItemRepository
                 caratula = @Caratula,
                 caratula_curso = @CaratulaCurso,
                 datos_estudiante = @DatosEstudiante,
+                product_economico_id = @ProductEconomicoId,
+                product_medio_id = @ProductMedioId,
+                product_premium_id = @ProductPremiumId,
+                price_economico = @PriceEconomico,
+                price_medio = @PriceMedio,
+                price_premium = @PricePremium,
                 updated_at = NOW()
             WHERE id = @Id", item);
     }

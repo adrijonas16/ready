@@ -97,6 +97,12 @@ public class SupplyItem
     public bool Caratula { get; set; }
     public string? CaratulaCurso { get; set; }
     public string? DatosEstudiante { get; set; }
+    public Guid? ProductEconomicoId { get; set; }
+    public Guid? ProductMedioId { get; set; }
+    public Guid? ProductPremiumId { get; set; }
+    public decimal? PriceEconomico { get; set; }
+    public decimal? PriceMedio { get; set; }
+    public decimal? PricePremium { get; set; }
 }
 
 public class Section

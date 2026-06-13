@@ -80,6 +80,16 @@ public class DatabaseInitializer
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
+            DO $$ BEGIN
+                ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS product_economico_id UUID;
+                ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS product_medio_id UUID;
+                ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS product_premium_id UUID;
+                ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS price_economico DECIMAL(10,2);
+                ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS price_medio DECIMAL(10,2);
+                ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS price_premium DECIMAL(10,2);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+
             CREATE TABLE IF NOT EXISTS products (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 name VARCHAR(255) NOT NULL,

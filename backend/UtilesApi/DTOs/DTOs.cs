@@ -79,6 +79,15 @@ public class SupplyItemResponse
     public bool Caratula { get; set; }
     public string? CaratulaCurso { get; set; }
     public string? DatosEstudiante { get; set; }
+    public Guid? ProductEconomicoId { get; set; }
+    public ProductResponse? ProductEconomico { get; set; }
+    public decimal? PriceEconomico { get; set; }
+    public Guid? ProductMedioId { get; set; }
+    public ProductResponse? ProductMedio { get; set; }
+    public decimal? PriceMedio { get; set; }
+    public Guid? ProductPremiumId { get; set; }
+    public ProductResponse? ProductPremium { get; set; }
+    public decimal? PricePremium { get; set; }
 }
 
 public class ListDetailResponse
@@ -188,6 +197,10 @@ public class UpdateSupplyItemRequest
     public bool? Caratula { get; set; }
     public string? CaratulaCurso { get; set; }
     public string? DatosEstudiante { get; set; }
+    public string? NombreOriginal { get; set; }
+    public Guid? ProductEconomicoId { get; set; }
+    public Guid? ProductMedioId { get; set; }
+    public Guid? ProductPremiumId { get; set; }
 }
 
 public class UpdateListPlanRequest
