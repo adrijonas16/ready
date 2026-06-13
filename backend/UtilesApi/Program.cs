@@ -27,6 +27,7 @@ builder.Services.AddScoped<ProductRepository>();
 builder.Services.AddScoped<OrderRepository>();
 builder.Services.AddScoped<OrderItemRepository>();
 builder.Services.AddScoped<AdditionalCostRepository>();
+builder.Services.AddScoped<SectionRepository>();
 
 var storageProvider = builder.Configuration["Storage:Provider"] ?? "local";
 if (storageProvider == "r2")

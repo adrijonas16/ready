@@ -99,6 +99,15 @@ public class SupplyItem
     public string? DatosEstudiante { get; set; }
 }
 
+public class Section
+{
+    public Guid Id { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class Product
 {
     public Guid Id { get; set; }

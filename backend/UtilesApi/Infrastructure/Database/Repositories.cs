@@ -136,3 +136,34 @@ public class GradeRepository
         return id;
     }
 }
+
+public class SectionRepository
+{
+    private readonly IDbConnectionFactory _db;
+
+    public SectionRepository(IDbConnectionFactory db)
+    {
+        _db = db;
+    }
+
+    public async Task<IEnumerable<Section>> GetAll()
+    {
+        using var connection = _db.CreateConnection();
+        return await connection.QueryAsync<Section>(
+            "SELECT id as Id, group_name as GroupName, name as Name, sort_order as SortOrder, created_at as CreatedAt FROM sections ORDER BY sort_order");
+    }
+
+    public async Task<Guid> Create(Section section)
+    {
+        using var connection = _db.CreateConnection();
+        var id = await connection.ExecuteScalarAsync<Guid>(@"
+            INSERT INTO sections (group_name, name, sort_order) VALUES (@GroupName, @Name, @SortOrder) RETURNING id", section);
+        return id;
+    }
+
+    public async Task Delete(Guid id)
+    {
+        using var connection = _db.CreateConnection();
+        await connection.ExecuteAsync("DELETE FROM sections WHERE id = @Id", new { Id = id });
+    }
+}

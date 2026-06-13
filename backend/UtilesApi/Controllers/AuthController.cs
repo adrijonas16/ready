@@ -226,6 +226,68 @@ public class SchoolsController : ControllerBase
     }
 }
 
+[ApiController]
+[Route("api/sections")]
+public class SectionsController : ControllerBase
+{
+    private readonly SectionRepository _sectionRepo;
+
+    public SectionsController(SectionRepository sectionRepo)
+    {
+        _sectionRepo = sectionRepo;
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<ApiResponse<IEnumerable<SectionResponse>>>> GetAll()
+    {
+        var sections = await _sectionRepo.GetAll();
+        return Ok(ApiResponse<IEnumerable<SectionResponse>>.Ok(sections.Select(s => new SectionResponse
+        {
+            Id = s.Id,
+            GroupName = s.GroupName,
+            Name = s.Name,
+            SortOrder = s.SortOrder
+        })));
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<ApiResponse<Guid>>> Create([FromBody] CreateSectionRequest request)
+    {
+        var section = new Core.Entities.Section
+        {
+            Id = Guid.NewGuid(),
+            GroupName = request.GroupName,
+            Name = request.Name,
+            SortOrder = request.SortOrder,
+            CreatedAt = DateTime.UtcNow
+        };
+        var id = await _sectionRepo.Create(section);
+        return Ok(ApiResponse<Guid>.Ok(id));
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _sectionRepo.Delete(id);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+}
+
+public class SectionResponse
+{
+    public Guid Id { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+}
+
+public class CreateSectionRequest
+{
+    public string GroupName { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+}
+
 public class CreateSchoolRequest
 {
     public string Name { get; set; } = string.Empty;

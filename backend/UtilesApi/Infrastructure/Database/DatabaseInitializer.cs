@@ -136,6 +136,14 @@ public class DatabaseInitializer
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS sections (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                group_name VARCHAR(50) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_supply_lists_estado ON supply_lists(estado);
             CREATE INDEX IF NOT EXISTS idx_supply_lists_user_id ON supply_lists(user_id);
             CREATE INDEX IF NOT EXISTS idx_supply_items_list_id ON supply_items(supply_list_id);
@@ -156,6 +164,33 @@ public class DatabaseInitializer
         checkCmd.CommandText = "SELECT COUNT(*) FROM products";
         var count = Convert.ToInt64(checkCmd.ExecuteScalar());
         if (count > 0) return;
+
+        // Insert sections
+        using var sectionsCheck = connection.CreateCommand();
+        sectionsCheck.CommandText = "SELECT COUNT(*) FROM sections";
+        var sectionsCount = Convert.ToInt64(sectionsCheck.ExecuteScalar());
+        if (sectionsCount == 0)
+        {
+            var insertSections = @"
+                INSERT INTO sections (group_name, name, sort_order) VALUES
+                ('Inicial', 'Inicial - 4 años', 1),
+                ('Inicial', 'Inicial - 5 años', 2),
+                ('Primaria', '1ro Primaria', 3),
+                ('Primaria', '2do Primaria', 4),
+                ('Primaria', '3ro Primaria', 5),
+                ('Primaria', '4to Primaria', 6),
+                ('Primaria', '5to Primaria', 7),
+                ('Primaria', '6to Primaria', 8),
+                ('Secundaria', '1ro Secundaria', 9),
+                ('Secundaria', '2do Secundaria', 10),
+                ('Secundaria', '3ro Secundaria', 11),
+                ('Secundaria', '4to Secundaria', 12),
+                ('Secundaria', '5to Secundaria', 13);
+            ";
+            using var secCmd = connection.CreateCommand();
+            secCmd.CommandText = insertSections;
+            secCmd.ExecuteNonQuery();
+        }
 
         // Insert products first
         var insertProducts = @"
