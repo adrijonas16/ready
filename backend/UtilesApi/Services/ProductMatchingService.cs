@@ -204,6 +204,9 @@ public class ListProcessingService
 
         foreach (var item in items)
         {
+            var changed = false;
+
+            // Auto-match default product
             if (item.MatchedProductId == null)
             {
                 var matchedProduct = await _matchingService.FindBestMatch(item.NombreOriginal, preferredTier);
@@ -213,9 +216,28 @@ public class ListProcessingService
                     item.NombreDetectado = matchedProduct.Name;
                     item.MatchedQuantity = item.Cantidad;
                     item.PriceAtMatch = matchedProduct.BasePrice;
-                    await _itemRepo.Update(item);
+                    changed = true;
                 }
             }
+
+            // Auto-match per tier
+            if (item.ProductEconomicoId == null)
+            {
+                var p = await _matchingService.FindBestMatch(item.NombreOriginal, "economico");
+                if (p != null) { item.ProductEconomicoId = p.Id; item.PriceEconomico = p.BasePrice; changed = true; }
+            }
+            if (item.ProductMedioId == null)
+            {
+                var p = await _matchingService.FindBestMatch(item.NombreOriginal, "medio");
+                if (p != null) { item.ProductMedioId = p.Id; item.PriceMedio = p.BasePrice; changed = true; }
+            }
+            if (item.ProductPremiumId == null)
+            {
+                var p = await _matchingService.FindBestMatch(item.NombreOriginal, "premium");
+                if (p != null) { item.ProductPremiumId = p.Id; item.PricePremium = p.BasePrice; changed = true; }
+            }
+
+            if (changed) await _itemRepo.Update(item);
         }
     }
 }

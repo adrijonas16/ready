@@ -342,6 +342,35 @@ public class ListsController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    [HttpPost("{id}/auto-match")]
+    public async Task<ActionResult<ApiResponse<bool>>> AutoMatch(Guid id, [FromQuery] bool force = false)
+    {
+        var items = await _itemRepo.GetByListId(id);
+        foreach (var item in items)
+        {
+            var results = await _productRepo.Search(item.NombreOriginal, null, 20);
+
+            var ecoMatch = results.FirstOrDefault(p => p.Tier == "economico") ?? results.FirstOrDefault();
+            var medMatch = results.FirstOrDefault(p => p.Tier == "medio") ?? results.FirstOrDefault();
+            var preMatch = results.FirstOrDefault(p => p.Tier == "premium") ?? results.FirstOrDefault();
+
+            if (ecoMatch != null && (force || item.ProductEconomicoId == null)) { item.ProductEconomicoId = ecoMatch.Id; item.PriceEconomico = ecoMatch.BasePrice; }
+            if (medMatch != null && (force || item.ProductMedioId == null)) { item.ProductMedioId = medMatch.Id; item.PriceMedio = medMatch.BasePrice; }
+            if (preMatch != null && (force || item.ProductPremiumId == null)) { item.ProductPremiumId = preMatch.Id; item.PricePremium = preMatch.BasePrice; }
+
+            if (medMatch != null && (force || item.MatchedProductId == null))
+            {
+                item.MatchedProductId = medMatch.Id;
+                item.NombreDetectado = medMatch.Name;
+                item.MatchedQuantity = item.Cantidad;
+                item.PriceAtMatch = medMatch.BasePrice;
+            }
+
+            await _itemRepo.Update(item);
+        }
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpPut("{id}/plan")]
     public async Task<ActionResult<ApiResponse<bool>>> UpdatePlan(Guid id, [FromBody] UpdateListPlanRequest request)
     {
