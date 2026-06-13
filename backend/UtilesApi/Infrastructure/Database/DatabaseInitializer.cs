@@ -154,6 +154,12 @@ public class DatabaseInitializer
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS categories (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                name VARCHAR(100) UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS school_sections (
                 school_id UUID REFERENCES schools(id) ON DELETE CASCADE,
                 section_id UUID REFERENCES sections(id) ON DELETE CASCADE,
@@ -201,6 +207,24 @@ public class DatabaseInitializer
             using var secCmd = connection.CreateCommand();
             secCmd.CommandText = insertSections;
             secCmd.ExecuteNonQuery();
+        }
+
+        // Categories seed
+        using var catCheck = connection.CreateCommand();
+        catCheck.CommandText = "SELECT COUNT(*) FROM categories";
+        var catCount = Convert.ToInt64(catCheck.ExecuteScalar());
+        if (catCount == 0)
+        {
+            var insertCats = @"
+                INSERT INTO categories (name) VALUES
+                ('Cuadernos'), ('Lapices'), ('Colores'), ('Accesorios'),
+                ('Pegamentos'), ('Papeles'), ('Mochilas'), ('Folders'),
+                ('Reglas'), ('Tijeras'), ('Borradores'), ('Marcadores'),
+                ('Temperas'), ('Plastilina'), ('Cartulinas');
+            ";
+            using var catCmd = connection.CreateCommand();
+            catCmd.CommandText = insertCats;
+            catCmd.ExecuteNonQuery();
         }
 
         using var checkCmd = connection.CreateCommand();

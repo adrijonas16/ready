@@ -310,6 +310,37 @@ public class CreateSectionRequest
     public int SortOrder { get; set; }
 }
 
+[ApiController]
+[Route("api/categories")]
+public class CategoriesController : ControllerBase
+{
+    private readonly CategoryRepository _catRepo;
+    public CategoriesController(CategoryRepository catRepo) { _catRepo = catRepo; }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var cats = await _catRepo.GetAll();
+        return Ok(ApiResponse<IEnumerable<object>>.Ok(cats.Select(c => new { c.Id, c.Name })));
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateCategoryRequest req)
+    {
+        var id = await _catRepo.Create(req.Name.Trim());
+        return Ok(ApiResponse<Guid>.Ok(id));
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _catRepo.Delete(id);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+}
+
+public class CreateCategoryRequest { public string Name { get; set; } = ""; }
+
 public class SetSchoolSectionsRequest
 {
     public List<Guid> SectionIds { get; set; } = new();
