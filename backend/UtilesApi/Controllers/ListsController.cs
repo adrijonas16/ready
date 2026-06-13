@@ -46,12 +46,12 @@ public class ListsController : ControllerBase
         if (files.Count > 5)
             return BadRequest(ApiResponse<ListResponse>.Fail("TOO_MANY", "Maximo 5 imagenes"));
 
-        var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp" };
+        var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
         var imageUrls = new List<string>();
         foreach (var file in files)
         {
             if (!allowedTypes.Contains(file.ContentType))
-                return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_TYPE", $"Solo se permiten imagenes JPEG, PNG o WebP. Archivo invalido: {file.FileName}"));
+                return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_TYPE", $"Solo se permiten imagenes, PDF o Word. Archivo invalido: {file.FileName}"));
             var url = await _storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
             imageUrls.Add(url);
         }
@@ -250,6 +250,14 @@ public class ListsController : ControllerBase
         }
 
         return Ok(ApiResponse<IEnumerable<ListResponse>>.Ok(result));
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteList(Guid id)
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        await Dapper.SqlMapper.ExecuteAsync(conn, "DELETE FROM supply_items WHERE supply_list_id = @Id; DELETE FROM supply_lists WHERE id = @Id", new { Id = id });
+        return Ok(ApiResponse<bool>.Ok(true));
     }
 
     [HttpPut("{id}/status")]
