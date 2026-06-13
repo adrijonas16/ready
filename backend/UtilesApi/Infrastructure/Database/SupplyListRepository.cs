@@ -230,6 +230,7 @@ public class SupplyItemRepository
         await connection.ExecuteAsync(@"
             UPDATE supply_items SET
                 product_id = @ProductId,
+                nombre_original = @NombreOriginal,
                 nombre_detectado = @NombreDetectado,
                 cantidad = @Cantidad,
                 notas = @Notas,
