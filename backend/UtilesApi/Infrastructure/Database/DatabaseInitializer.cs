@@ -176,12 +176,7 @@ public class DatabaseInitializer
 
     private void SeedData(IDbConnection connection)
     {
-        using var checkCmd = connection.CreateCommand();
-        checkCmd.CommandText = "SELECT COUNT(*) FROM products";
-        var count = Convert.ToInt64(checkCmd.ExecuteScalar());
-        if (count > 0) return;
-
-        // Insert sections
+        // Sections seed - always run independently
         using var sectionsCheck = connection.CreateCommand();
         sectionsCheck.CommandText = "SELECT COUNT(*) FROM sections";
         var sectionsCount = Convert.ToInt64(sectionsCheck.ExecuteScalar());
@@ -207,6 +202,11 @@ public class DatabaseInitializer
             secCmd.CommandText = insertSections;
             secCmd.ExecuteNonQuery();
         }
+
+        using var checkCmd = connection.CreateCommand();
+        checkCmd.CommandText = "SELECT COUNT(*) FROM products";
+        var count = Convert.ToInt64(checkCmd.ExecuteScalar());
+        if (count > 0) return;
 
         // Insert products first
         var insertProducts = @"
