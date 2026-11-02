@@ -206,6 +206,54 @@ public class DatabaseInitializer
                 ('Carátula personalizada', 'Carátula impresa por curso con el nombre del estudiante.', 'SRV-CARATULA', 2.50)
             ) AS v(name, description, sku, price)
             WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.sku = v.sku);
+
+            -- Variantes de productos (ya las usa el admin). Se crean si no existen.
+            CREATE TABLE IF NOT EXISTS product_variant_types (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+                name VARCHAR(100) NOT NULL,
+                display_order INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS product_variant_values (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                variant_type_id UUID REFERENCES product_variant_types(id) ON DELETE CASCADE,
+                value VARCHAR(150) NOT NULL,
+                image_url TEXT,
+                price_modifier DECIMAL(10,2) DEFAULT 0,
+                stock INTEGER DEFAULT 0,
+                display_order INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                color_hex VARCHAR(20)
+            );
+
+            -- Opciones de los servicios, editables en Admin > Productos > (servicio) > Variantes:
+            -- colores de forro, diseños de etiqueta (se les puede subir foto) y cursos para carátulas.
+            INSERT INTO product_variant_types (product_id, name, display_order)
+            SELECT p.id, v.tipo, 0
+            FROM (VALUES ('SRV-FORRO-CUADERNO', 'Color'), ('SRV-ETIQUETA', 'Diseño'), ('SRV-CARATULA', 'Curso')) AS v(sku, tipo)
+            JOIN products p ON p.sku = v.sku
+            WHERE NOT EXISTS (SELECT 1 FROM product_variant_types t WHERE t.product_id = p.id AND t.name = v.tipo);
+
+            INSERT INTO product_variant_values (variant_type_id, value, color_hex, stock, display_order)
+            SELECT t.id, v.valor, v.hex, 99999, v.orden
+            FROM (VALUES
+                ('SRV-FORRO-CUADERNO', 'Color', 'Azul', '#2E62D9', 1), ('SRV-FORRO-CUADERNO', 'Color', 'Rojo', '#D93A2B', 2),
+                ('SRV-FORRO-CUADERNO', 'Color', 'Verde', '#2F9E5B', 3), ('SRV-FORRO-CUADERNO', 'Color', 'Amarillo', '#F2C230', 4),
+                ('SRV-FORRO-CUADERNO', 'Color', 'Rosado', '#F27BAA', 5), ('SRV-FORRO-CUADERNO', 'Color', 'Morado', '#7D55D8', 6),
+                ('SRV-FORRO-CUADERNO', 'Color', 'Celeste', '#59B7E8', 7), ('SRV-FORRO-CUADERNO', 'Color', 'Naranja', '#F28B30', 8),
+                ('SRV-FORRO-CUADERNO', 'Color', 'Solo vinifán', NULL, 9),
+                ('SRV-ETIQUETA', 'Diseño', 'Lisa', NULL, 1), ('SRV-ETIQUETA', 'Diseño', 'Estrellas', NULL, 2),
+                ('SRV-ETIQUETA', 'Diseño', 'Flores', NULL, 3), ('SRV-ETIQUETA', 'Diseño', 'Espacio', NULL, 4),
+                ('SRV-ETIQUETA', 'Diseño', 'Deportes', NULL, 5), ('SRV-ETIQUETA', 'Diseño', 'Corazones', NULL, 6),
+                ('SRV-CARATULA', 'Curso', 'Matemática', NULL, 1), ('SRV-CARATULA', 'Curso', 'Comunicación', NULL, 2),
+                ('SRV-CARATULA', 'Curso', 'Ciencia y Tecnología', NULL, 3), ('SRV-CARATULA', 'Curso', 'Personal Social', NULL, 4),
+                ('SRV-CARATULA', 'Curso', 'Inglés', NULL, 5), ('SRV-CARATULA', 'Curso', 'Arte y Cultura', NULL, 6),
+                ('SRV-CARATULA', 'Curso', 'Educación Religiosa', NULL, 7), ('SRV-CARATULA', 'Curso', 'Educación Física', NULL, 8),
+                ('SRV-CARATULA', 'Curso', 'Tutoría', NULL, 9)
+            ) AS v(sku, tipo, valor, hex, orden)
+            JOIN products p ON p.sku = v.sku
+            JOIN product_variant_types t ON t.product_id = p.id AND t.name = v.tipo
+            WHERE NOT EXISTS (SELECT 1 FROM product_variant_values x WHERE x.variant_type_id = t.id);
         ";
 
         using var cmd = connection.CreateCommand();
