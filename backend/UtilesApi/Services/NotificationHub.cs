@@ -113,7 +113,7 @@ public class NotificationService : INotificationService
         {
             type = "list_ready",
             listId,
-            message = "Tu lista de utiles esta lista para revisar",
+            message = "Tu lista de útiles fue aprobada. Ya puedes elegir tu opción y comprar.",
             timestamp = DateTime.UtcNow
         });
     }

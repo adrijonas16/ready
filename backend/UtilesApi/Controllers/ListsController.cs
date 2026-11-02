@@ -18,6 +18,9 @@ public class ListsController : ControllerBase
     private readonly ProductRepository _productRepo;
     private readonly IStorageService _storage;
     private readonly ListProcessingService _processingService;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<ListsController> _logger;
+    private readonly INotificationService _notifications;
 
     public ListsController(
         SupplyListRepository listRepo,
@@ -26,7 +29,10 @@ public class ListsController : ControllerBase
         GradeRepository gradeRepo,
         ProductRepository productRepo,
         IStorageService storage,
-        ListProcessingService processingService)
+        ListProcessingService processingService,
+        IServiceScopeFactory scopeFactory,
+        ILogger<ListsController> logger,
+        INotificationService notifications)
     {
         _listRepo = listRepo;
         _itemRepo = itemRepo;
@@ -35,6 +41,24 @@ public class ListsController : ControllerBase
         _productRepo = productRepo;
         _storage = storage;
         _processingService = processingService;
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+        _notifications = notifications;
+    }
+
+    /// <summary>
+    /// Ejecuta el procesamiento en segundo plano con su propio scope de DI
+    /// (los servicios del request ya no son válidos cuando la respuesta termina).
+    /// </summary>
+    private void RunInBackground(Guid listId, Func<ListProcessingService, Task> work)
+    {
+        _ = Task.Run(async () =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<ListProcessingService>();
+            try { await work(service); }
+            catch (Exception ex) { _logger.LogError(ex, "Error procesando la lista {ListId}", listId); }
+        });
     }
 
     [HttpPost("upload")]
@@ -84,15 +108,17 @@ public class ListsController : ControllerBase
         var createdId = await _listRepo.Create(list);
         list.Id = createdId;
 
-        // Process OCR and match products in background
-        _ = Task.Run(async () =>
-        {
-            try { await _processingService.ProcessList(createdId); }
-            catch (Exception ex) { Console.WriteLine($"OCR processing error: {ex.Message}"); }
-        });
+        // Leer la lista (IA) y emparejar productos en segundo plano.
+        // El estado PROCESANDO se marca antes de responder para que el cliente pueda esperar el resultado.
+        await _listRepo.SetIaEstado(createdId, "PROCESANDO");
+        RunInBackground(createdId, s => s.ProcessList(createdId));
 
         var school = await _schoolRepo.GetById(schoolId);
         var grade = await _gradeRepo.GetById(gradeId);
+
+        // Aviso al admin: hay una lista nueva para revisar y aprobar
+        _ = _notifications.NotifyNewList(createdId.ToString(), school?.Name ?? "", grade?.Name ?? "")
+            .ContinueWith(t => _logger.LogWarning(t.Exception, "No se pudo notificar la lista nueva"), TaskContinuationOptions.OnlyOnFaulted);
 
         return Ok(ApiResponse<ListResponse>.Ok(new ListResponse
         {
@@ -107,6 +133,7 @@ public class ListsController : ControllerBase
             Estado = list.Estado.ToString(),
             EsOficial = list.EsOficial,
             SubmittedBy = list.SubmittedBy,
+            IaEstado = "PROCESANDO",
             FechaSubida = list.FechaSubida,
             CreatedAt = list.CreatedAt
         }));
@@ -151,6 +178,10 @@ public class ListsController : ControllerBase
                 EsOficial = list.EsOficial,
                 Observaciones = list.Observaciones,
                 SubmittedBy = list.SubmittedBy,
+                UserObservaciones = list.UserObservaciones,
+                IaEstado = list.IaEstado,
+                IaMensaje = list.IaMensaje,
+                Extras = list.Extras,
                 Plan = list.Plan,
                 EstudianteNombre = list.EstudianteNombre,
                 EstudianteGrado = list.EstudianteGrado,
@@ -170,6 +201,8 @@ public class ListsController : ControllerBase
                 MatchedProductId = i.MatchedProductId,
                 MatchedQuantity = i.MatchedQuantity,
                 PriceAtMatch = i.PriceAtMatch,
+                UserCustomQuantity = i.UserCustomQuantity,
+                UserNotas = i.UserNotas,
                 MatchedProduct = MapProduct(i.MatchedProductId),
                 ProductEconomicoId = i.ProductEconomicoId,
                 ProductEconomico = MapProduct(i.ProductEconomicoId),
@@ -215,6 +248,7 @@ public class ListsController : ControllerBase
                 EsOficial = list.EsOficial,
                 Observaciones = list.Observaciones,
                 SubmittedBy = list.SubmittedBy,
+                IaEstado = list.IaEstado,
                 FechaSubida = list.FechaSubida,
                 FechaValidacion = list.FechaValidacion,
                 CreatedAt = list.CreatedAt
@@ -270,7 +304,15 @@ public class ListsController : ControllerBase
 
         if (status == ListStatus.VALIDADA)
         {
-            _ = Task.Run(() => _processingService.ProcessMatching(id));
+            RunInBackground(id, s => s.ProcessMatching(id));
+
+            // Aviso al cliente: ya puede elegir su opción y comprar
+            var aprobada = await _listRepo.GetById(id);
+            if (aprobada?.UserId != null)
+            {
+                try { await _notifications.NotifyListReady(aprobada.UserId.Value.ToString(), id.ToString()); }
+                catch (Exception ex) { _logger.LogWarning(ex, "No se pudo notificar la aprobación de la lista {ListId}", id); }
+            }
         }
 
         return Ok(ApiResponse<bool>.Ok(true));
@@ -287,6 +329,8 @@ public class ListsController : ControllerBase
         if (request.ProductId.HasValue)
         {
             item.MatchedProductId = request.ProductId;
+            var elegido = await _productRepo.GetById(request.ProductId.Value);
+            if (elegido != null) item.PriceAtMatch = elegido.BasePrice;
         }
         if (request.NombreDetectado != null)
         {
@@ -371,6 +415,77 @@ public class ListsController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    /// <summary>Vuelve a leer la lista desde sus archivos (reemplaza los útiles detectados).</summary>
+    [HttpPost("{id}/reprocess")]
+    public async Task<ActionResult<ApiResponse<bool>>> Reprocess(Guid id)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (string.IsNullOrWhiteSpace(list.ImageUrl))
+            return BadRequest(ApiResponse<bool>.Fail("NO_FILE", "La lista no tiene archivos para leer"));
+
+        await _listRepo.SetIaEstado(id, "PROCESANDO");
+        RunInBackground(id, s => s.ProcessList(id));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    /// <summary>Guarda los extras de la lista (forrado, etiquetas, carátulas y libros) como JSON.</summary>
+    [HttpPut("{id}/extras")]
+    public async Task<ActionResult<ApiResponse<bool>>> UpdateExtras(Guid id, [FromBody] System.Text.Json.JsonElement extras)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (extras.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return BadRequest(ApiResponse<bool>.Fail("INVALID", "Formato de extras inválido"));
+
+        var json = extras.GetRawText();
+        if (json.Length > 20000)
+            return BadRequest(ApiResponse<bool>.Fail("TOO_LARGE", "Demasiados datos en los extras"));
+
+        await _listRepo.UpdateExtras(id, json);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    [HttpPost("{id}/items")]
+    public async Task<ActionResult<ApiResponse<SupplyItemResponse>>> AddItem(Guid id, [FromBody] CreateFromTextItem request)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<SupplyItemResponse>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (string.IsNullOrWhiteSpace(request.NombreOriginal))
+            return BadRequest(ApiResponse<SupplyItemResponse>.Fail("INVALID", "Escribe el nombre del útil"));
+
+        var item = new SupplyItem
+        {
+            SupplyListId = id,
+            NombreOriginal = request.NombreOriginal.Trim(),
+            NombreDetectado = request.NombreOriginal.Trim(),
+            Cantidad = request.Cantidad > 0 ? request.Cantidad : 1,
+            Notas = request.Notas,
+            CreatedAt = DateTime.UtcNow,
+        };
+        item.Id = await _itemRepo.Create(item);
+
+        return Ok(ApiResponse<SupplyItemResponse>.Ok(new SupplyItemResponse
+        {
+            Id = item.Id,
+            SupplyListId = id,
+            NombreOriginal = item.NombreOriginal,
+            NombreDetectado = item.NombreDetectado,
+            Cantidad = item.Cantidad,
+            Notas = item.Notas,
+        }));
+    }
+
+    [HttpDelete("{id}/items/{itemId}")]
+    public async Task<ActionResult<ApiResponse<bool>>> DeleteItem(Guid id, Guid itemId)
+    {
+        var items = await _itemRepo.GetByListId(id);
+        if (!items.Any(i => i.Id == itemId))
+            return NotFound(ApiResponse<bool>.Fail("ITEM_NOT_FOUND", "Item no encontrado"));
+        await _itemRepo.Delete(itemId);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpPut("{id}/plan")]
     public async Task<ActionResult<ApiResponse<bool>>> UpdatePlan(Guid id, [FromBody] UpdateListPlanRequest request)
     {
@@ -383,22 +498,45 @@ public class ListsController : ControllerBase
             UPDATE supply_lists SET plan = @Plan, estudiante_nombre = @Nombre, estudiante_grado = @Grado, updated_at = NOW()
             WHERE id = @Id", new { Id = id, Plan = request.Plan, Nombre = request.EstudianteNombre, Grado = request.EstudianteGrado });
 
-        // Re-match products based on tier preference
-        var items = await _itemRepo.GetByListId(id);
+        // Cambiar cada útil al producto del nivel elegido. Primero se usa el producto que la IA
+        // (o el admin) asignó a ese nivel; si no hay, se busca uno parecido como antes.
+        var aplicar = request.AplicarATodos ?? !string.Equals(list.Plan, request.Plan, StringComparison.OrdinalIgnoreCase);
+        var items = aplicar ? await _itemRepo.GetByListId(id) : Enumerable.Empty<SupplyItem>();
         foreach (var item in items)
         {
+            // Si un útil no tiene producto en ese nivel, se usa el más cercano (igual que en el frontend).
+            var tierProductId = request.Plan switch
+            {
+                "economico" => item.ProductEconomicoId ?? item.ProductMedioId ?? item.ProductPremiumId,
+                "premium" => item.ProductPremiumId ?? item.ProductMedioId ?? item.ProductEconomicoId,
+                "medio" => item.ProductMedioId ?? item.ProductEconomicoId ?? item.ProductPremiumId,
+                _ => null,
+            };
+
+            if (tierProductId.HasValue)
+            {
+                if (item.MatchedProductId == tierProductId) continue;
+                var tierProduct = await _productRepo.GetById(tierProductId.Value);
+                if (tierProduct == null) continue;
+                item.MatchedProductId = tierProduct.Id;
+                item.NombreDetectado = tierProduct.Name;
+                item.PriceAtMatch = tierProduct.BasePrice;
+                await _itemRepo.Update(item);
+                continue;
+            }
+
             if (item.MatchedProductId.HasValue)
             {
                 var currentProduct = await _productRepo.GetById(item.MatchedProductId.Value);
                 if (currentProduct != null && currentProduct.Tier != request.Plan)
                 {
-                    // Find a product in the same category matching the tier
                     var alternatives = await _productRepo.Search(item.NombreOriginal, null, 20);
                     var tierMatch = alternatives.FirstOrDefault(p => p.Tier == request.Plan && p.Category == currentProduct.Category)
                         ?? alternatives.FirstOrDefault(p => p.Tier == request.Plan);
                     if (tierMatch != null)
                     {
                         item.MatchedProductId = tierMatch.Id;
+                        item.NombreDetectado = tierMatch.Name;
                         item.PriceAtMatch = tierMatch.BasePrice;
                         await _itemRepo.Update(item);
                     }
@@ -467,11 +605,7 @@ public class ListsController : ControllerBase
         }
 
         // Try auto-matching products
-        _ = Task.Run(async () =>
-        {
-            try { await _processingService.ProcessMatching(listId); }
-            catch { /* best effort */ }
-        });
+        RunInBackground(listId, s => s.ProcessMatching(listId));
 
         return Ok(ApiResponse<ListResponse>.Ok(new ListResponse
         {

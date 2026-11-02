@@ -5,7 +5,7 @@ using UtilesApi.Infrastructure.Database;
 using UtilesApi.Infrastructure.OCR;
 using UtilesApi.Infrastructure.Storage;
 using UtilesApi.Services;
-using UtilesApi.Infrastructure.Database;
+using UtilesApi.Infrastructure.AI;
 
 Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 
@@ -44,6 +44,13 @@ builder.Services.AddSingleton<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IProductMatchingService, ProductMatchingService>();
 builder.Services.AddScoped<ListProcessingService>();
+
+// IA (Claude) para leer listas de útiles. Clave en AI:ApiKey, AI__ApiKey o ANTHROPIC_API_KEY.
+var aiOptions = builder.Configuration.GetSection("AI").Get<AiOptions>() ?? new AiOptions();
+if (string.IsNullOrWhiteSpace(aiOptions.ApiKey))
+    aiOptions.ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? string.Empty;
+builder.Services.AddSingleton(aiOptions);
+builder.Services.AddHttpClient<ClaudeListReader>(c => c.Timeout = TimeSpan.FromMinutes(8));
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "DefaultSecretKey123456789012345678901234";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "UtilesApi";

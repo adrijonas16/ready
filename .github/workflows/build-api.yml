@@ -1,0 +1,21 @@
+name: Compilar API
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["backend/**", ".github/workflows/build-api.yml"]
+  pull_request:
+    paths: ["backend/**"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restaurar paquetes
+        run: dotnet restore backend/UtilesApi/UtilesApi.csproj
+      - name: Compilar
+        run: dotnet build backend/UtilesApi/UtilesApi.csproj --no-restore -c Release
