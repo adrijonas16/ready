@@ -20,6 +20,7 @@ public class ListsController : ControllerBase
     private readonly ListProcessingService _processingService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ListsController> _logger;
+    private readonly INotificationService _notifications;
 
     public ListsController(
         SupplyListRepository listRepo,
@@ -30,7 +31,8 @@ public class ListsController : ControllerBase
         IStorageService storage,
         ListProcessingService processingService,
         IServiceScopeFactory scopeFactory,
-        ILogger<ListsController> logger)
+        ILogger<ListsController> logger,
+        INotificationService notifications)
     {
         _listRepo = listRepo;
         _itemRepo = itemRepo;
@@ -41,6 +43,7 @@ public class ListsController : ControllerBase
         _processingService = processingService;
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _notifications = notifications;
     }
 
     /// <summary>
@@ -112,6 +115,10 @@ public class ListsController : ControllerBase
 
         var school = await _schoolRepo.GetById(schoolId);
         var grade = await _gradeRepo.GetById(gradeId);
+
+        // Aviso al admin: hay una lista nueva para revisar y aprobar
+        _ = _notifications.NotifyNewList(createdId.ToString(), school?.Name ?? "", grade?.Name ?? "")
+            .ContinueWith(t => _logger.LogWarning(t.Exception, "No se pudo notificar la lista nueva"), TaskContinuationOptions.OnlyOnFaulted);
 
         return Ok(ApiResponse<ListResponse>.Ok(new ListResponse
         {
@@ -298,6 +305,14 @@ public class ListsController : ControllerBase
         if (status == ListStatus.VALIDADA)
         {
             RunInBackground(id, s => s.ProcessMatching(id));
+
+            // Aviso al cliente: ya puede elegir su opción y comprar
+            var aprobada = await _listRepo.GetById(id);
+            if (aprobada?.UserId != null)
+            {
+                try { await _notifications.NotifyListReady(aprobada.UserId.Value.ToString(), id.ToString()); }
+                catch (Exception ex) { _logger.LogWarning(ex, "No se pudo notificar la aprobación de la lista {ListId}", id); }
+            }
         }
 
         return Ok(ApiResponse<bool>.Ok(true));
