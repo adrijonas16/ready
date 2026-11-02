@@ -29,6 +29,20 @@ public class AiListResult
     public string? Transcripcion { get; set; }
     public string? Observaciones { get; set; }
     public List<AiListItem> Items { get; set; } = new();
+    public List<AiBook> Libros { get; set; } = new();
+    /// <summary>La lista pide forrar los cuadernos.</summary>
+    public bool ForrarCuadernos { get; set; }
+    public string? ColorForro { get; set; }
+    /// <summary>La lista pide útiles marcados con nombre / etiquetados.</summary>
+    public bool Etiquetar { get; set; }
+}
+
+public class AiBook
+{
+    public string Titulo { get; set; } = string.Empty;
+    public string? Editorial { get; set; }
+    public int Cantidad { get; set; } = 1;
+    public Product? Producto { get; set; }
 }
 
 public class AiListItem
@@ -117,7 +131,9 @@ public class ClaudeListReader
             throw new AiReadException("No pudimos abrir los archivos. Sube la lista como foto (JPG o PNG), PDF o Word .docx.");
 
         // Los ids del catálogo se reemplazan por números cortos para ahorrar tokens.
-        var indexed = catalog.Select((p, i) => (Index: i + 1, Product: p)).ToList();
+        var indexed = catalog
+            .Where(p => !string.Equals(p.Category, "Servicios", StringComparison.OrdinalIgnoreCase))
+            .Select((p, i) => (Index: i + 1, Product: p)).ToList();
         var byIndex = indexed.ToDictionary(x => x.Index, x => x.Product);
 
         var catalogText = new StringBuilder();
@@ -177,6 +193,13 @@ public class ClaudeListReader
         - "notas": indicaciones del colegio para ese útil (marca exigida, color, "con nombre", "forrado", curso al que va).
         - "forrado": true si la lista pide forrar ese útil; "colorForro" si indica color.
 
+        Libros y extras de toda la lista:
+        - Los libros, textos escolares, planes lectores y cuadernos de trabajo de editorial van en "libros"
+          (no en "items"): "titulo", "editorial" si aparece, "cantidad" y "producto" con el número del catálogo
+          si ese mismo libro está en el catálogo (si no, null).
+        - "forrarCuadernos": true si la lista pide forrar los cuadernos en general; "colorForroGeneral" si indica color.
+        - "etiquetar": true si pide marcar los útiles con nombre o ponerles etiqueta.
+
         Vocabulario frecuente en listas peruanas: cuad. = cuaderno; cuadric./cuadriculado; rayado/una raya; doble raya;
         triple renglón; papelote/papelógrafo; papel lustre; cartulina; plumón indeleble/acrílico; témperas; micas;
         fólder/folder; vinifán (forro plástico); block (de dibujo); plastilina; silicona; limpiatipo.
@@ -198,6 +221,22 @@ public class ClaudeListReader
               "grado": { "type": "string" },
               "transcripcion": { "type": "string" },
               "observaciones": { "type": "string" },
+              "forrarCuadernos": { "type": "boolean" },
+              "colorForroGeneral": { "type": "string" },
+              "etiquetar": { "type": "boolean" },
+              "libros": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "titulo": { "type": "string" },
+                    "editorial": { "type": "string" },
+                    "cantidad": { "type": "integer", "minimum": 1 },
+                    "producto": { "type": ["integer", "null"] }
+                  },
+                  "required": ["titulo"]
+                }
+              },
               "items": {
                 "type": "array",
                 "items": {
@@ -262,6 +301,22 @@ public class ClaudeListReader
             Transcripcion = Str(input["transcripcion"]),
             Observaciones = Str(input["observaciones"]),
         };
+
+        result.ForrarCuadernos = ToBool(input["forrarCuadernos"]) ?? false;
+        result.ColorForro = Str(input["colorForroGeneral"]);
+        result.Etiquetar = ToBool(input["etiquetar"]) ?? false;
+        foreach (var lb in input["libros"] as JsonArray ?? new JsonArray())
+        {
+            var titulo = Str(lb?["titulo"]);
+            if (titulo is null) continue;
+            result.Libros.Add(new AiBook
+            {
+                Titulo = titulo,
+                Editorial = Str(lb?["editorial"]),
+                Cantidad = Math.Clamp(ToInt(lb?["cantidad"]) ?? 1, 1, 20),
+                Producto = P(lb?["producto"]),
+            });
+        }
 
         foreach (var it in input["items"] as JsonArray ?? new JsonArray())
         {

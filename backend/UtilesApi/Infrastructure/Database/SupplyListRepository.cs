@@ -40,6 +40,7 @@ public class SupplyListRepository
                 estudiante_grado as EstudianteGrado,
                 ia_estado as IaEstado,
                 ia_mensaje as IaMensaje,
+                extras as Extras,
                 created_at as CreatedAt,
                 updated_at as UpdatedAt
             FROM supply_lists WHERE id = @Id", new { Id = id });
@@ -151,6 +152,14 @@ public class SupplyListRepository
         await connection.ExecuteAsync(@"
             UPDATE supply_lists SET ocr_text = @OcrText, parsed_college = @ParsedCollege, parsed_grade = @ParsedGrade, updated_at = NOW()
             WHERE id = @Id", new { Id = id, OcrText = ocrText, ParsedCollege = parsedCollege, ParsedGrade = parsedGrade });
+    }
+
+    public async Task UpdateExtras(Guid id, string? extras)
+    {
+        using var connection = _db.CreateConnection();
+        await connection.ExecuteAsync(
+            "UPDATE supply_lists SET extras = @Extras, updated_at = NOW() WHERE id = @Id",
+            new { Id = id, Extras = extras });
     }
 
     /// <summary>Estado de la lectura automática: PROCESANDO, LISTO, ERROR o MANUAL.</summary>

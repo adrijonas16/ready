@@ -192,6 +192,20 @@ public class DatabaseInitializer
             ALTER TABLE products ADD COLUMN IF NOT EXISTS rating DECIMAL(3,1) DEFAULT 4.0;
             ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_unit VARCHAR(30) DEFAULT 'unidad';
             ALTER TABLE products ADD COLUMN IF NOT EXISTS unit_quantity INTEGER DEFAULT 1;
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS extras TEXT;
+
+            -- Servicios (forrado, etiquetas, carátulas) como productos para que pasen por carrito y pedido.
+            -- Los precios son iniciales: se editan en Admin > Productos (categoría Servicios).
+            INSERT INTO categories (name) SELECT 'Servicios' WHERE NOT EXISTS (SELECT 1 FROM categories WHERE name = 'Servicios');
+            INSERT INTO products (name, description, category, brand, sku, base_price, stock, is_active, tier)
+            SELECT v.name, v.description, 'Servicios', 'Ready', v.sku, v.price, 99999, TRUE, 'medio'
+            FROM (VALUES
+                ('Forrado de cuaderno', 'Forramos cada cuaderno con papel del color elegido y vinifán transparente.', 'SRV-FORRO-CUADERNO', 2.00),
+                ('Forrado de libro', 'Forramos cada libro con vinifán transparente.', 'SRV-FORRO-LIBRO', 3.00),
+                ('Etiqueta personalizada', 'Etiqueta con nombre, grado y diseño elegido, pegada en cada cuaderno y libro.', 'SRV-ETIQUETA', 0.50),
+                ('Carátula personalizada', 'Carátula impresa por curso con el nombre del estudiante.', 'SRV-CARATULA', 2.50)
+            ) AS v(name, description, sku, price)
+            WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.sku = v.sku);
         ";
 
         using var cmd = connection.CreateCommand();

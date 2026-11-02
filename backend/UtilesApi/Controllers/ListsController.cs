@@ -174,6 +174,7 @@ public class ListsController : ControllerBase
                 UserObservaciones = list.UserObservaciones,
                 IaEstado = list.IaEstado,
                 IaMensaje = list.IaMensaje,
+                Extras = list.Extras,
                 Plan = list.Plan,
                 EstudianteNombre = list.EstudianteNombre,
                 EstudianteGrado = list.EstudianteGrado,
@@ -413,6 +414,23 @@ public class ListsController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    /// <summary>Guarda los extras de la lista (forrado, etiquetas, carátulas y libros) como JSON.</summary>
+    [HttpPut("{id}/extras")]
+    public async Task<ActionResult<ApiResponse<bool>>> UpdateExtras(Guid id, [FromBody] System.Text.Json.JsonElement extras)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (extras.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return BadRequest(ApiResponse<bool>.Fail("INVALID", "Formato de extras inválido"));
+
+        var json = extras.GetRawText();
+        if (json.Length > 20000)
+            return BadRequest(ApiResponse<bool>.Fail("TOO_LARGE", "Demasiados datos en los extras"));
+
+        await _listRepo.UpdateExtras(id, json);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpPost("{id}/items")]
     public async Task<ActionResult<ApiResponse<SupplyItemResponse>>> AddItem(Guid id, [FromBody] CreateFromTextItem request)
     {
@@ -471,11 +489,12 @@ public class ListsController : ControllerBase
         var items = aplicar ? await _itemRepo.GetByListId(id) : Enumerable.Empty<SupplyItem>();
         foreach (var item in items)
         {
+            // Si un útil no tiene producto en ese nivel, se usa el más cercano (igual que en el frontend).
             var tierProductId = request.Plan switch
             {
-                "economico" => item.ProductEconomicoId,
-                "premium" => item.ProductPremiumId,
-                "medio" => item.ProductMedioId,
+                "economico" => item.ProductEconomicoId ?? item.ProductMedioId ?? item.ProductPremiumId,
+                "premium" => item.ProductPremiumId ?? item.ProductMedioId ?? item.ProductEconomicoId,
+                "medio" => item.ProductMedioId ?? item.ProductEconomicoId ?? item.ProductPremiumId,
                 _ => null,
             };
 

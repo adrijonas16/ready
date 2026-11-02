@@ -64,6 +64,8 @@ public class SupplyList
     /// <summary>PROCESANDO, LISTO, ERROR o MANUAL (sin IA configurada).</summary>
     public string? IaEstado { get; set; }
     public string? IaMensaje { get; set; }
+    /// <summary>JSON con forrado, etiquetas, carátulas y libros elegidos para la lista.</summary>
+    public string? Extras { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

@@ -54,6 +54,7 @@ public class ListResponse
     public string? EstudianteGrado { get; set; }
     public string? IaEstado { get; set; }
     public string? IaMensaje { get; set; }
+    public string? Extras { get; set; }
     public DateTime? FechaSubida { get; set; }
     public DateTime? FechaInicioRevision { get; set; }
     public DateTime? FechaValidacion { get; set; }

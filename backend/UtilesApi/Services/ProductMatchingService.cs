@@ -218,7 +218,7 @@ public class ListProcessingService
 
         var result = await _aiReader.ReadAsync(files, catalog, school?.Name, grade?.Name);
 
-        if (!result.Legible || result.Items.Count == 0)
+        if (!result.Legible || (result.Items.Count == 0 && result.Libros.Count == 0))
             throw new AiReadException(result.Observaciones
                 ?? "No encontramos útiles en el archivo. Toma la foto de frente, con buena luz y que se vea toda la hoja.");
 
@@ -263,6 +263,29 @@ public class ListProcessingService
             item.Forro = it.Forrado;
             item.ForroColor = it.ColorForro;
             await _itemRepo.Update(item);
+        }
+
+        // Extras sugeridos por la lista (el cliente los ajusta). No se pisa lo que ya eligió.
+        var actual = await _listRepo.GetById(list.Id);
+        if (string.IsNullOrWhiteSpace(actual?.Extras))
+        {
+            var extras = new
+            {
+                forro = new { activo = result.ForrarCuadernos, color = result.ColorForro },
+                etiquetas = new { activo = result.Etiquetar, nombre = actual?.EstudianteNombre ?? "", grado = actual?.EstudianteGrado ?? "", diseno = "lisa" },
+                caratulas = new { activo = false, cursos = Array.Empty<string>() },
+                forrarLibros = false,
+                libros = result.Libros.Select((b, i) => new
+                {
+                    id = $"ia-{i + 1}",
+                    titulo = b.Titulo,
+                    editorial = b.Editorial ?? "",
+                    cantidad = b.Cantidad,
+                    productoId = b.Producto?.Id,
+                    precio = b.Producto?.BasePrice,
+                }).ToList(),
+            };
+            await _listRepo.UpdateExtras(list.Id, System.Text.Json.JsonSerializer.Serialize(extras));
         }
 
         var sinProducto = result.Items.Count(i => i.Economico == null && i.Medio == null && i.Premium == null);
