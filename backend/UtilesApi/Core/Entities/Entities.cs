@@ -61,6 +61,9 @@ public class SupplyList
     public string? Plan { get; set; }
     public string? EstudianteNombre { get; set; }
     public string? EstudianteGrado { get; set; }
+    /// <summary>PROCESANDO, LISTO, ERROR o MANUAL (sin IA configurada).</summary>
+    public string? IaEstado { get; set; }
+    public string? IaMensaje { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

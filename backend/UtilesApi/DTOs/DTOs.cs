@@ -52,6 +52,8 @@ public class ListResponse
     public string? Plan { get; set; }
     public string? EstudianteNombre { get; set; }
     public string? EstudianteGrado { get; set; }
+    public string? IaEstado { get; set; }
+    public string? IaMensaje { get; set; }
     public DateTime? FechaSubida { get; set; }
     public DateTime? FechaInicioRevision { get; set; }
     public DateTime? FechaValidacion { get; set; }
@@ -208,6 +210,11 @@ public class UpdateListPlanRequest
     public string Plan { get; set; } = "medio";
     public string? EstudianteNombre { get; set; }
     public string? EstudianteGrado { get; set; }
+    /// <summary>
+    /// true: cambia todos los útiles al nivel elegido. false: solo guarda los datos.
+    /// Si no se envía, se cambian solo cuando el plan es distinto al guardado.
+    /// </summary>
+    public bool? AplicarATodos { get; set; }
 }
 
 public class UserRegisterRequest

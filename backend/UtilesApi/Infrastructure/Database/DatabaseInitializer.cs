@@ -171,6 +171,27 @@ public class DatabaseInitializer
             CREATE INDEX IF NOT EXISTS idx_supply_items_list_id ON supply_items(supply_list_id);
             CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
             CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+
+            -- Columnas de personalización y lectura con IA (idempotente: no toca columnas existentes)
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS user_observaciones TEXT;
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS plan VARCHAR(20);
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS estudiante_nombre VARCHAR(255);
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS estudiante_grado VARCHAR(100);
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS ia_estado VARCHAR(20);
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS ia_mensaje TEXT;
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS user_custom_quantity INTEGER;
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS user_notas TEXT;
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS forro BOOLEAN DEFAULT FALSE;
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS forro_color VARCHAR(50);
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS etiqueta VARCHAR(100);
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS etiqueta_dibujo BOOLEAN DEFAULT FALSE;
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS caratula BOOLEAN DEFAULT FALSE;
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS caratula_curso VARCHAR(100);
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS datos_estudiante TEXT;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS tier VARCHAR(20) DEFAULT 'medio';
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS rating DECIMAL(3,1) DEFAULT 4.0;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_unit VARCHAR(30) DEFAULT 'unidad';
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS unit_quantity INTEGER DEFAULT 1;
         ";
 
         using var cmd = connection.CreateCommand();

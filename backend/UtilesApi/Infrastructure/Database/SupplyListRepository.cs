@@ -34,6 +34,12 @@ public class SupplyListRepository
                 fecha_subida as FechaSubida,
                 fecha_inicio_revision as FechaInicioRevision,
                 fecha_validacion as FechaValidacion,
+                user_observaciones as UserObservaciones,
+                plan as Plan,
+                estudiante_nombre as EstudianteNombre,
+                estudiante_grado as EstudianteGrado,
+                ia_estado as IaEstado,
+                ia_mensaje as IaMensaje,
                 created_at as CreatedAt,
                 updated_at as UpdatedAt
             FROM supply_lists WHERE id = @Id", new { Id = id });
@@ -139,6 +145,23 @@ public class SupplyListRepository
             });
     }
 
+    public async Task UpdateOcr(Guid id, string? ocrText, string? parsedCollege, string? parsedGrade)
+    {
+        using var connection = _db.CreateConnection();
+        await connection.ExecuteAsync(@"
+            UPDATE supply_lists SET ocr_text = @OcrText, parsed_college = @ParsedCollege, parsed_grade = @ParsedGrade, updated_at = NOW()
+            WHERE id = @Id", new { Id = id, OcrText = ocrText, ParsedCollege = parsedCollege, ParsedGrade = parsedGrade });
+    }
+
+    /// <summary>Estado de la lectura automática: PROCESANDO, LISTO, ERROR o MANUAL.</summary>
+    public async Task SetIaEstado(Guid id, string estado, string? mensaje = null)
+    {
+        using var connection = _db.CreateConnection();
+        await connection.ExecuteAsync(
+            "UPDATE supply_lists SET ia_estado = @Estado, ia_mensaje = @Mensaje, updated_at = NOW() WHERE id = @Id",
+            new { Id = id, Estado = estado, Mensaje = mensaje });
+    }
+
     public async Task UpdateStatus(Guid id, ListStatus status, string? observaciones = null)
     {
         using var connection = _db.CreateConnection();
@@ -198,6 +221,13 @@ public class SupplyItemRepository
                 price_economico as PriceEconomico,
                 price_medio as PriceMedio,
                 price_premium as PricePremium,
+                COALESCE(forro, FALSE) as Forro,
+                forro_color as ForroColor,
+                etiqueta as Etiqueta,
+                COALESCE(etiqueta_dibujo, FALSE) as EtiquetaDibujo,
+                COALESCE(caratula, FALSE) as Caratula,
+                caratula_curso as CaratulaCurso,
+                datos_estudiante as DatosEstudiante,
                 created_at as CreatedAt,
                 updated_at as UpdatedAt
             FROM supply_items WHERE supply_list_id = @ListId",
