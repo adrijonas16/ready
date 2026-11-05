@@ -16,4 +16,9 @@
     <PackageReference Include="AWSSDK.S3" Version="3.7.305.23" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Datos iniciales (catálogo, colegios y listas de ejemplo) que se cargan en una base nueva -->
+    <EmbeddedResource Include="Infrastructure/Database/seed-catalogo.sql" LogicalName="seed-catalogo.sql" />
+  </ItemGroup>
+
 </Project>
