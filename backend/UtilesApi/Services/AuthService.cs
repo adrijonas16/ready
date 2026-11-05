@@ -21,6 +21,16 @@ public class AuthService : IAuthService
         _configuration = configuration;
     }
 
+    // Quien se registre con el correo de Admin:Email (variable Admin__Email) entra como administrador.
+    // Así una base nueva tiene su primer admin sin tocar SQL.
+    private UserRole RolInicial(string email)
+    {
+        var admin = _configuration["Admin:Email"];
+        return !string.IsNullOrWhiteSpace(admin) && string.Equals(admin.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase)
+            ? UserRole.ADMIN
+            : UserRole.USER;
+    }
+
     public async Task<User?> Register(string email, string password, string name)
     {
         var existing = await _userRepo.GetByEmail(email);
@@ -33,7 +43,7 @@ public class AuthService : IAuthService
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
             Name = name,
-            Role = UserRole.USER,
+            Role = RolInicial(email),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -54,7 +64,7 @@ public class AuthService : IAuthService
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
             Name = name,
-            Role = UserRole.USER,
+            Role = RolInicial(email),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
