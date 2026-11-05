@@ -55,6 +55,8 @@ public class ListResponse
     public string? IaEstado { get; set; }
     public string? IaMensaje { get; set; }
     public string? Extras { get; set; }
+    /// <summary>Id de la lista original si es una copia personal; null si es original.</summary>
+    public Guid? CopiaDe { get; set; }
     public DateTime? FechaSubida { get; set; }
     public DateTime? FechaInicioRevision { get; set; }
     public DateTime? FechaValidacion { get; set; }
@@ -115,35 +117,104 @@ public class ProductResponse
     public string? Attributes { get; set; }
     public decimal Rating { get; set; }
     public string Tier { get; set; } = "medio";
+    public bool IsActive { get; set; } = true;
+    /// <summary>Precio con la campaña activa que incluye al producto, o null.</summary>
+    public decimal? SalePrice { get; set; }
+    public string? CampaignSlug { get; set; }
+    public string SaleUnit { get; set; } = "unidad";
+    public int UnitQuantity { get; set; } = 1;
+
+    public static ProductResponse From(UtilesApi.Core.Entities.Product p) => new()
+    {
+        Id = p.Id,
+        Name = p.Name,
+        Description = p.Description,
+        Category = p.Category,
+        Brand = p.Brand,
+        Sku = p.Sku,
+        BasePrice = p.BasePrice,
+        ImageUrl = p.ImageUrl,
+        Stock = p.Stock,
+        Attributes = p.Attributes,
+        Rating = p.Rating,
+        Tier = p.Tier,
+        IsActive = p.IsActive,
+        SalePrice = p.SalePrice,
+        CampaignSlug = p.CampaignSlug,
+        SaleUnit = p.SaleUnit,
+        UnitQuantity = p.UnitQuantity
+    };
 }
 
 public class CreateOrderRequest
 {
-    public Guid UserId { get; set; }
+    /// <summary>Se ignora: el pedido siempre es del usuario del token.</summary>
+    public Guid? UserId { get; set; }
+    /// <summary>Compatibilidad: una sola lista. Se une con SupplyListIds.</summary>
     public Guid? SupplyListId { get; set; }
+    public List<Guid>? SupplyListIds { get; set; }
     public List<OrderItemRequest> Items { get; set; } = new();
     public string ShippingAddress { get; set; } = string.Empty;
     public string ShippingPhone { get; set; } = string.Empty;
     public string? ContactNotes { get; set; }
+    public PagoDto? Pago { get; set; }
+    public EntregaDto? Entrega { get; set; }
+    /// <summary>Lo que el cliente vio; el servidor lo recalcula con la configuración de la tienda.</summary>
+    public decimal? CostoEnvio { get; set; }
+    public ComprobanteDto? Comprobante { get; set; }
 }
 
 public class OrderItemRequest
 {
     public Guid ProductId { get; set; }
     public int Quantity { get; set; }
+    /// <summary>Solo sirve para validar el recargo de variante; el precio lo pone el servidor.</summary>
+    public decimal? UnitPrice { get; set; }
     public string? Notes { get; set; }
+    /// <summary>Para quién es (nombre del hijo)</summary>
+    public string? Para { get; set; }
+}
+
+public class PagoDto
+{
+    public string? Metodo { get; set; }
+    public string? Operacion { get; set; }
+    public string? Estado { get; set; }
+}
+
+public class EntregaDto
+{
+    public string? Fecha { get; set; }
+    public string? Franja { get; set; }
+}
+
+public class ComprobanteDto
+{
+    /// <summary>boleta o factura</summary>
+    public string Tipo { get; set; } = "boleta";
+    public string? Documento { get; set; }
+    public string? RazonSocial { get; set; }
 }
 
 public class OrderResponse
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
+    public string? UserName { get; set; }
+    public string? UserEmail { get; set; }
     public Guid? SupplyListId { get; set; }
+    public List<Guid> SupplyListIds { get; set; } = new();
+    public decimal Subtotal { get; set; }
+    public decimal CostoEnvio { get; set; }
     public decimal Total { get; set; }
     public string Status { get; set; } = string.Empty;
     public string ShippingAddress { get; set; } = string.Empty;
     public string ShippingPhone { get; set; } = string.Empty;
+    public string? ContactNotes { get; set; }
     public string? TrackingNumber { get; set; }
+    public PagoDto? Pago { get; set; }
+    public EntregaDto? Entrega { get; set; }
+    public ComprobanteDto? Comprobante { get; set; }
     public DateTime CreatedAt { get; set; }
     public List<OrderItemResponse> Items { get; set; } = new();
     public List<OrderStatusHistoryResponse> StatusHistory { get; set; } = new();
@@ -154,9 +225,11 @@ public class OrderItemResponse
     public Guid Id { get; set; }
     public Guid ProductId { get; set; }
     public string ProductName { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public string? Notes { get; set; }
+    public string? Para { get; set; }
 }
 
 public class OrderStatusHistoryResponse
@@ -185,6 +258,34 @@ public class UpdateListStatusRequest
 {
     public string Status { get; set; } = string.Empty;
     public string? Observaciones { get; set; }
+    /// <summary>null = no cambia</summary>
+    public bool? EsOficial { get; set; }
+}
+
+public class UpdateListRequest
+{
+    public Guid? SchoolId { get; set; }
+    public Guid? GradeId { get; set; }
+    public int? Year { get; set; }
+}
+
+public class StoreSettingsDto
+{
+    public decimal CostoEnvio { get; set; }
+    public decimal? EnvioGratisDesde { get; set; }
+    public string Whatsapp { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string HorarioEntrega { get; set; } = string.Empty;
+    public int DiasEntrega { get; set; }
+    public string? Zonas { get; set; }
+}
+
+public class UpdateProfileRequest
+{
+    public string? Name { get; set; }
+    public string? Phone { get; set; }
+    public string? Address { get; set; }
+    public string? Documento { get; set; }
 }
 
 public class UpdateSupplyItemRequest
@@ -240,7 +341,19 @@ public class UserResponse
     public string Name { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public string? Address { get; set; }
+    public string? Documento { get; set; }
     public string Role { get; set; } = string.Empty;
+
+    public static UserResponse From(UtilesApi.Core.Entities.User u) => new()
+    {
+        Id = u.Id,
+        Email = u.Email,
+        Name = u.Name,
+        Phone = u.Phone,
+        Address = u.Address,
+        Documento = u.Documento,
+        Role = u.Role.ToString()
+    };
 }
 
 public class AuthResponse

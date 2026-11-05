@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -6,6 +7,7 @@ using UtilesApi.Infrastructure.OCR;
 using UtilesApi.Infrastructure.Storage;
 using UtilesApi.Services;
 using UtilesApi.Infrastructure.AI;
+using UtilesApi.DTOs;
 
 Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 
@@ -71,9 +73,38 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtIssuer,
         ValidAudience = jwtAudience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        // AuthService.GenerateToken escribe ClaimTypes.Role / NameIdentifier (en el token quedan como "role" / "nameid")
+        // y el manejador los vuelve a mapear al leerlos. [Authorize(Roles = ...)] lee este tipo de claim.
+        RoleClaimType = ClaimTypes.Role,
+        NameClaimType = ClaimTypes.NameIdentifier
+    };
+    options.MapInboundClaims = true;
+    options.Events = new JwtBearerEvents
+    {
+        // SignalR no puede mandar cabeceras desde el navegador: el token llega como ?access_token=
+        OnMessageReceived = ctx =>
+        {
+            var accessToken = ctx.Request.Query["access_token"];
+            if (!string.IsNullOrEmpty(accessToken) && ctx.HttpContext.Request.Path.StartsWithSegments("/hub"))
+                ctx.Token = accessToken;
+            return Task.CompletedTask;
+        },
+        // Respuestas 401/403 con el mismo formato { success, error } que el resto de la API
+        OnChallenge = async ctx =>
+        {
+            ctx.HandleResponse();
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await ctx.Response.WriteAsJsonAsync(ApiResponse.Fail("UNAUTHORIZED", "Inicia sesión para continuar"));
+        },
+        OnForbidden = async ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(ApiResponse.Fail("FORBIDDEN", "No tienes permiso para esta acción"));
+        }
     };
 });
+builder.Services.AddAuthorization();
 
 builder.Services.AddCors(options =>
 {
@@ -81,11 +112,19 @@ builder.Services.AddCors(options =>
     {
         policy.AllowAnyOrigin()
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .WithExposedHeaders("X-Total-Count");
     });
 });
 
 var app = builder.Build();
+
+// Con la clave por defecto (o la del repositorio) cualquiera puede firmar un token de ADMIN.
+if (!app.Environment.IsDevelopment() &&
+    (builder.Configuration["Jwt:Key"] is null || jwtKey == "UtilesPlatformSecretKey2024SuperSecure12345678901234567890"))
+{
+    app.Logger.LogCritical("Jwt:Key no está configurada o es la clave del repositorio. Define Jwt__Key con un valor secreto propio.");
+}
 
 using (var scope = app.Services.CreateScope())
 {

@@ -10,6 +10,8 @@ public class User
     public string Name { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public string? Address { get; set; }
+    /// <summary>DNI o RUC para boleta/factura</summary>
+    public string? Documento { get; set; }
     public UserRole Role { get; set; } = UserRole.USER;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -66,6 +68,8 @@ public class SupplyList
     public string? IaMensaje { get; set; }
     /// <summary>JSON con forrado, etiquetas, carátulas y libros elegidos para la lista.</summary>
     public string? Extras { get; set; }
+    /// <summary>Lista original de la que se copió (copia personal de una familia) o null.</summary>
+    public Guid? CopiaDe { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -75,6 +79,7 @@ public enum ListStatus
     PENDIENTE_REVISION,
     EN_REVISION,
     OBSERVADA,
+    RECHAZADA,
     VALIDADA,
     PROCESADA
 }
@@ -146,6 +151,13 @@ public class Product
     public int UnitQuantity { get; set; } = 1;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    // Calculados (no son columnas): precio con la campaña activa que incluye al producto
+    public decimal? SalePrice { get; set; }
+    public string? CampaignSlug { get; set; }
+
+    /// <summary>Precio que se cobra hoy: el de campaña si hay, si no el base.</summary>
+    public decimal PrecioVigente => SalePrice ?? BasePrice;
 }
 
 public class AdditionalCost
@@ -167,6 +179,15 @@ public class Order
     public string ShippingAddress { get; set; } = string.Empty;
     public string ShippingPhone { get; set; } = string.Empty;
     public string? TrackingNumber { get; set; }
+    public string? ContactNotes { get; set; }
+    /// <summary>JSON: { metodo, operacion, estado }</summary>
+    public string? Pago { get; set; }
+    /// <summary>JSON: { fecha, franja }</summary>
+    public string? Entrega { get; set; }
+    /// <summary>JSON: { tipo, documento, razonSocial }</summary>
+    public string? Comprobante { get; set; }
+    public decimal CostoEnvio { get; set; }
+    public Guid[]? SupplyListIds { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -177,7 +198,8 @@ public enum OrderStatus
     EN_PREPARACION,
     ARMADO,
     EN_CAMINO,
-    ENTREGADO
+    ENTREGADO,
+    CANCELADO
 }
 
 public class OrderItem
@@ -188,6 +210,8 @@ public class OrderItem
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public string? Notes { get; set; }
+    /// <summary>Para quién es (nombre del hijo/alumno)</summary>
+    public string? Para { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 

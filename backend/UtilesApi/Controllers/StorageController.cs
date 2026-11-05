@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using UtilesApi.DTOs;
 using UtilesApi.Services;
@@ -18,6 +19,7 @@ public class StorageController : ControllerBase
     }
 
     [HttpGet("usage")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> GetUsage()
     {
         var accountId = _config["R2:AccountId"] ?? "";
@@ -57,6 +59,7 @@ public class StorageController : ControllerBase
     }
 
     [HttpDelete("cleanup")]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> CleanupTestImages()
     {
         // List and delete test objects from R2

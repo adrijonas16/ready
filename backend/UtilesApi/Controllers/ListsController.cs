@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using UtilesApi.Core.Entities;
 using UtilesApi.DTOs;
@@ -61,7 +62,57 @@ public class ListsController : ControllerBase
         });
     }
 
+    /// <summary>Lista oficial/compartida del colegio (no es copia personal y ya está aprobada).</summary>
+    private static bool EsListaPublica(SupplyList l) =>
+        l.CopiaDe == null && (l.EsOficial || l.Estado == ListStatus.VALIDADA || l.Estado == ListStatus.PROCESADA);
+
+    /// <summary>
+    /// Quién puede cambiar útiles, plan y extras de una lista: ADMIN/OPERATOR siempre; si la lista tiene dueño,
+    /// solo el dueño; las listas públicas del colegio no se tocan (el cliente trabaja sobre su copia);
+    /// las listas sin dueño que no son públicas (subidas o copiadas sin sesión) sí, porque su id solo lo tiene quien la creó.
+    /// </summary>
+    private bool PuedeEditar(SupplyList l)
+    {
+        if (User.IsStaff()) return true;
+        if (l.UserId.HasValue) return User.GetUserId() == l.UserId;
+        return !EsListaPublica(l);
+    }
+
+    private ActionResult SinPermiso<T>() => User.GetUserId() == null
+        ? Unauthorized(ApiResponse<T>.Fail("UNAUTHORIZED", "Inicia sesión para cambiar esta lista"))
+        : StatusCode(403, ApiResponse<T>.Fail("FORBIDDEN", "Esta lista no es tuya: haz una copia para cambiarla"));
+
+    private static ListResponse Mapear(SupplyList list, string schoolName, string gradeName, bool detalle) => new()
+    {
+        Id = list.Id,
+        UserId = list.UserId,
+        SchoolId = list.SchoolId,
+        SchoolName = schoolName,
+        GradeId = list.GradeId,
+        GradeName = gradeName,
+        Year = list.Year,
+        ImageUrl = list.ImageUrl,
+        OcrText = detalle ? list.OcrText : null,
+        Estado = list.Estado.ToString(),
+        EsOficial = list.EsOficial,
+        Observaciones = list.Observaciones,
+        SubmittedBy = list.SubmittedBy,
+        UserObservaciones = list.UserObservaciones,
+        IaEstado = list.IaEstado,
+        IaMensaje = list.IaMensaje,
+        Extras = detalle ? list.Extras : null,
+        Plan = list.Plan,
+        EstudianteNombre = list.EstudianteNombre,
+        EstudianteGrado = list.EstudianteGrado,
+        CopiaDe = list.CopiaDe,
+        FechaSubida = list.FechaSubida,
+        FechaInicioRevision = list.FechaInicioRevision,
+        FechaValidacion = list.FechaValidacion,
+        CreatedAt = list.CreatedAt
+    };
+
     [HttpPost("upload")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<ListResponse>>> Upload([FromForm] List<IFormFile> files, [FromForm] Guid userId, [FromForm] Guid schoolId, [FromForm] Guid gradeId, [FromForm] int year, [FromForm] string? submittedBy)
     {
         if (files == null || files.Count == 0)
@@ -81,14 +132,8 @@ public class ListsController : ControllerBase
         }
         var imageUrl = string.Join("|", imageUrls);
 
-        // Validate user exists, set null if not found
-        Guid? validUserId = null;
-        if (userId != Guid.Empty)
-        {
-            var userRepo = HttpContext.RequestServices.GetRequiredService<UserRepository>();
-            var existingUser = await userRepo.GetById(userId);
-            if (existingUser != null) validUserId = userId;
-        }
+        // La lista es de quien tiene la sesión (el userId del formulario se ignora: no se puede subir a nombre de otro)
+        Guid? validUserId = User.GetUserId();
 
         var list = new SupplyList
         {
@@ -140,6 +185,7 @@ public class ListsController : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<ListDetailResponse>>> GetById(Guid id)
     {
         var list = await _listRepo.GetById(id);
@@ -153,43 +199,15 @@ public class ListsController : ControllerBase
         var allProductIds = items
             .SelectMany(i => new[] { i.MatchedProductId, i.ProductEconomicoId, i.ProductMedioId, i.ProductPremiumId })
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct();
-        var matchedProducts = allProductIds.Any()
-            ? (await Task.WhenAll(allProductIds.Select(pid => _productRepo.GetById(pid)))).Where(p => p != null).ToDictionary(p => p!.Id, p => p!)
-            : new Dictionary<Guid, Product>();
+        var matchedProducts = (await _productRepo.GetByIds(allProductIds)).ToDictionary(p => p.Id, p => p);
 
         ProductResponse? MapProduct(Guid? id) => id.HasValue && matchedProducts.ContainsKey(id.Value)
-            ? new ProductResponse { Id = matchedProducts[id.Value].Id, Name = matchedProducts[id.Value].Name, Description = matchedProducts[id.Value].Description, Category = matchedProducts[id.Value].Category, Brand = matchedProducts[id.Value].Brand, Sku = matchedProducts[id.Value].Sku, BasePrice = matchedProducts[id.Value].BasePrice, ImageUrl = matchedProducts[id.Value].ImageUrl, Stock = matchedProducts[id.Value].Stock, Rating = matchedProducts[id.Value].Rating, Tier = matchedProducts[id.Value].Tier }
+            ? ProductResponse.From(matchedProducts[id.Value])
             : null;
 
         return Ok(ApiResponse<ListDetailResponse>.Ok(new ListDetailResponse
         {
-            List = new ListResponse
-            {
-                Id = list.Id,
-                UserId = list.UserId,
-                SchoolId = list.SchoolId,
-                SchoolName = school?.Name ?? "",
-                GradeId = list.GradeId,
-                GradeName = grade?.Name ?? "",
-                Year = list.Year,
-                ImageUrl = list.ImageUrl,
-                OcrText = list.OcrText,
-                Estado = list.Estado.ToString(),
-                EsOficial = list.EsOficial,
-                Observaciones = list.Observaciones,
-                SubmittedBy = list.SubmittedBy,
-                UserObservaciones = list.UserObservaciones,
-                IaEstado = list.IaEstado,
-                IaMensaje = list.IaMensaje,
-                Extras = list.Extras,
-                Plan = list.Plan,
-                EstudianteNombre = list.EstudianteNombre,
-                EstudianteGrado = list.EstudianteGrado,
-                FechaSubida = list.FechaSubida,
-                FechaInicioRevision = list.FechaInicioRevision,
-                FechaValidacion = list.FechaValidacion,
-                CreatedAt = list.CreatedAt
-            },
+            List = Mapear(list, school?.Name ?? "", grade?.Name ?? "", detalle: true),
             Items = items.Select(i => new SupplyItemResponse
             {
                 Id = i.Id,
@@ -225,41 +243,40 @@ public class ListsController : ControllerBase
         }));
     }
 
+    /// <summary>
+    /// Todas las listas (ADMIN/OPERATOR, con filtros estado/esOficial/userId).
+    /// Un cliente logueado solo puede pedir las suyas (?userId=su id).
+    /// </summary>
     [HttpGet]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<IEnumerable<ListResponse>>>> GetAll([FromQuery] string? estado, [FromQuery] bool? esOficial, [FromQuery] Guid? userId)
     {
+        if (!User.IsStaff())
+        {
+            var propio = User.GetUserId();
+            if (propio == null || userId != propio)
+                return StatusCode(403, ApiResponse<IEnumerable<ListResponse>>.Fail("FORBIDDEN", "Solo puedes ver tus propias listas"));
+        }
+
         var lists = await _listRepo.GetAll(estado, esOficial, userId);
         var result = new List<ListResponse>();
+        var colegios = new Dictionary<Guid, string>();
+        var grados = new Dictionary<Guid, string>();
 
         foreach (var list in lists)
         {
-            var school = await _schoolRepo.GetById(list.SchoolId);
-            var grade = await _gradeRepo.GetById(list.GradeId);
-            result.Add(new ListResponse
-            {
-                Id = list.Id,
-                UserId = list.UserId,
-                SchoolId = list.SchoolId,
-                SchoolName = school?.Name ?? "",
-                GradeId = list.GradeId,
-                GradeName = grade?.Name ?? "",
-                Year = list.Year,
-                ImageUrl = list.ImageUrl,
-                Estado = list.Estado.ToString(),
-                EsOficial = list.EsOficial,
-                Observaciones = list.Observaciones,
-                SubmittedBy = list.SubmittedBy,
-                IaEstado = list.IaEstado,
-                FechaSubida = list.FechaSubida,
-                FechaValidacion = list.FechaValidacion,
-                CreatedAt = list.CreatedAt
-            });
+            if (!colegios.TryGetValue(list.SchoolId, out var colegio))
+                colegios[list.SchoolId] = colegio = (await _schoolRepo.GetById(list.SchoolId))?.Name ?? "";
+            if (!grados.TryGetValue(list.GradeId, out var grado))
+                grados[list.GradeId] = grado = (await _gradeRepo.GetById(list.GradeId))?.Name ?? "";
+            result.Add(Mapear(list, colegio, grado, detalle: false));
         }
 
         return Ok(ApiResponse<IEnumerable<ListResponse>>.Ok(result));
     }
 
     [HttpGet("official")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<IEnumerable<ListResponse>>>> GetOfficial([FromQuery] Guid? schoolId, [FromQuery] Guid? gradeId)
     {
         var lists = await _listRepo.GetOfficialLists(schoolId, gradeId);
@@ -288,30 +305,48 @@ public class ListsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> DeleteList(Guid id)
     {
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
-        await Dapper.SqlMapper.ExecuteAsync(conn, "DELETE FROM supply_items WHERE supply_list_id = @Id; DELETE FROM supply_lists WHERE id = @Id", new { Id = id });
+        conn.Open();
+        using var tx = conn.BeginTransaction();
+        // Los pedidos y copias que apuntan a la lista la pierden como referencia, no se borran
+        await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE orders SET supply_list_id = NULL WHERE supply_list_id = @Id", new { Id = id }, tx);
+        await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE supply_lists SET copia_de = NULL WHERE copia_de = @Id", new { Id = id }, tx);
+        await Dapper.SqlMapper.ExecuteAsync(conn, "DELETE FROM supply_items WHERE supply_list_id = @Id; DELETE FROM supply_lists WHERE id = @Id", new { Id = id }, tx);
+        tx.Commit();
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    private static readonly ListStatus[] EstadosRevision =
+        { ListStatus.PENDIENTE_REVISION, ListStatus.EN_REVISION, ListStatus.OBSERVADA, ListStatus.RECHAZADA, ListStatus.VALIDADA };
+
+    /// <summary>
+    /// Revisión del admin: {status, observaciones, esOficial?}. Se puede reabrir una lista validada (VALIDADA → EN_REVISION).
+    /// observaciones null = no cambia, "" = borrar.
+    /// </summary>
     [HttpPut("{id}/status")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<ActionResult<ApiResponse<bool>>> UpdateStatus(Guid id, [FromBody] UpdateListStatusRequest request)
     {
-        if (!Enum.TryParse<ListStatus>(request.Status, out var status))
-            return BadRequest(ApiResponse<bool>.Fail("INVALID_STATUS", "Estado invalido"));
+        if (!Enum.TryParse<ListStatus>(request.Status, true, out var status) || !EstadosRevision.Contains(status))
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_STATUS", "Estado inválido: usa PENDIENTE_REVISION, EN_REVISION, OBSERVADA, RECHAZADA o VALIDADA"));
 
-        await _listRepo.UpdateStatus(id, status, request.Observaciones);
+        var anterior = await _listRepo.GetById(id);
+        if (anterior == null)
+            return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
 
-        if (status == ListStatus.VALIDADA)
+        await _listRepo.UpdateStatus(id, status, request.Observaciones, request.EsOficial);
+
+        if (status == ListStatus.VALIDADA && anterior.Estado != ListStatus.VALIDADA)
         {
             RunInBackground(id, s => s.ProcessMatching(id));
 
             // Aviso al cliente: ya puede elegir su opción y comprar
-            var aprobada = await _listRepo.GetById(id);
-            if (aprobada?.UserId != null)
+            if (anterior.UserId != null)
             {
-                try { await _notifications.NotifyListReady(aprobada.UserId.Value.ToString(), id.ToString()); }
+                try { await _notifications.NotifyListReady(anterior.UserId.Value.ToString(), id.ToString()); }
                 catch (Exception ex) { _logger.LogWarning(ex, "No se pudo notificar la aprobación de la lista {ListId}", id); }
             }
         }
@@ -319,9 +354,39 @@ public class ListsController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    /// <summary>Corrige colegio, grado o año de una lista: {schoolId?, gradeId?, year?}.</summary>
+    [HttpPut("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
+    public async Task<ActionResult<ApiResponse<ListResponse>>> UpdateList(Guid id, [FromBody] UpdateListRequest request)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<ListResponse>.Fail("NOT_FOUND", "Lista no encontrada"));
+
+        var schoolId = request.SchoolId ?? list.SchoolId;
+        var school = await _schoolRepo.GetById(schoolId);
+        if (school == null) return BadRequest(ApiResponse<ListResponse>.Fail("SCHOOL_NOT_FOUND", "Colegio no encontrado"));
+
+        var gradeId = request.GradeId ?? list.GradeId;
+        var grade = await _gradeRepo.GetById(gradeId);
+        if (grade == null) return BadRequest(ApiResponse<ListResponse>.Fail("GRADE_NOT_FOUND", "Grado no encontrado"));
+        if (grade.SchoolId != schoolId)
+            return BadRequest(ApiResponse<ListResponse>.Fail("GRADE_MISMATCH", "Ese grado no pertenece al colegio elegido"));
+        if (request.Year is < 2000 or > 2100)
+            return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_YEAR", "Año inválido"));
+
+        await _listRepo.UpdateDatos(id, schoolId, gradeId, request.Year);
+        var actualizada = await _listRepo.GetById(id);
+        return Ok(ApiResponse<ListResponse>.Ok(Mapear(actualizada!, school.Name, grade.Name, detalle: false)));
+    }
+
     [HttpPut("{id}/items/{itemId}")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<bool>>> UpdateItem(Guid id, Guid itemId, [FromBody] UpdateSupplyItemRequest request)
     {
+        var lista = await _listRepo.GetById(id);
+        if (lista == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (!PuedeEditar(lista)) return SinPermiso<bool>();
+
         var items = await _itemRepo.GetByListId(id);
         var item = items.FirstOrDefault(i => i.Id == itemId);
         if (item == null)
@@ -388,6 +453,7 @@ public class ListsController : ControllerBase
     }
 
     [HttpPost("{id}/auto-match")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<ActionResult<ApiResponse<bool>>> AutoMatch(Guid id, [FromQuery] bool force = false)
     {
         var items = await _itemRepo.GetByListId(id);
@@ -418,6 +484,7 @@ public class ListsController : ControllerBase
 
     /// <summary>Vuelve a leer la lista desde sus archivos (reemplaza los útiles detectados).</summary>
     [HttpPost("{id}/reprocess")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<ActionResult<ApiResponse<bool>>> Reprocess(Guid id)
     {
         var list = await _listRepo.GetById(id);
@@ -432,10 +499,12 @@ public class ListsController : ControllerBase
 
     /// <summary>Guarda los extras de la lista (forrado, etiquetas, carátulas y libros) como JSON.</summary>
     [HttpPut("{id}/extras")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<bool>>> UpdateExtras(Guid id, [FromBody] System.Text.Json.JsonElement extras)
     {
         var list = await _listRepo.GetById(id);
         if (list == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (!PuedeEditar(list)) return SinPermiso<bool>();
         if (extras.ValueKind != System.Text.Json.JsonValueKind.Object)
             return BadRequest(ApiResponse<bool>.Fail("INVALID", "Formato de extras inválido"));
 
@@ -448,10 +517,12 @@ public class ListsController : ControllerBase
     }
 
     [HttpPost("{id}/items")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<SupplyItemResponse>>> AddItem(Guid id, [FromBody] CreateFromTextItem request)
     {
         var list = await _listRepo.GetById(id);
         if (list == null) return NotFound(ApiResponse<SupplyItemResponse>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (!PuedeEditar(list)) return SinPermiso<SupplyItemResponse>();
         if (string.IsNullOrWhiteSpace(request.NombreOriginal))
             return BadRequest(ApiResponse<SupplyItemResponse>.Fail("INVALID", "Escribe el nombre del útil"));
 
@@ -488,8 +559,13 @@ public class ListsController : ControllerBase
     }
 
     [HttpDelete("{id}/items/{itemId}")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteItem(Guid id, Guid itemId)
     {
+        var lista = await _listRepo.GetById(id);
+        if (lista == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (!PuedeEditar(lista)) return SinPermiso<bool>();
+
         var items = await _itemRepo.GetByListId(id);
         if (!items.Any(i => i.Id == itemId))
             return NotFound(ApiResponse<bool>.Fail("ITEM_NOT_FOUND", "Item no encontrado"));
@@ -500,38 +576,55 @@ public class ListsController : ControllerBase
     /// <summary>
     /// Copia personal de una lista (normalmente la oficial del colegio) para que cada familia
     /// cambie productos, cantidades y extras sin tocar la lista que ven los demás.
-    /// Si el usuario ya tiene una copia de esa lista, devuelve la misma.
+    /// La copia es del usuario de la sesión (sin sesión queda sin dueño). Si ya tiene una copia de esa lista
+    /// devuelve la misma (y le aplica el plan pedido si es otro), salvo nueva=true: crea otra (hermanos del mismo grado).
     /// </summary>
     [HttpPost("{id}/copia")]
-    public async Task<ActionResult<ApiResponse<object>>> Copiar(Guid id, [FromBody] CopiarListaRequest request)
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object>>> Copiar(Guid id, [FromBody] CopiarListaRequest? request)
     {
+        request ??= new CopiarListaRequest();
         var list = await _listRepo.GetById(id);
         if (list == null) return NotFound(ApiResponse<object>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (request.Plan != null && request.Plan is not ("economico" or "medio" or "premium"))
+            return BadRequest(ApiResponse<object>.Fail("INVALID_PLAN", "Opción inválida: economico, medio o premium"));
+
+        // copia_de siempre apunta a la lista del colegio (aunque se copie desde otra copia)
+        var origenId = list.CopiaDe ?? id;
+        var userId = User.GetUserId();
 
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
-        if (request.UserId.HasValue)
+        if (userId.HasValue && request.Nueva != true)
         {
-            var existente = await Dapper.SqlMapper.ExecuteScalarAsync<Guid?>(conn,
-                "SELECT id FROM supply_lists WHERE copia_de = @Id AND user_id = @UserId ORDER BY created_at DESC LIMIT 1",
-                new { Id = id, request.UserId });
-            if (existente.HasValue) return Ok(ApiResponse<object>.Ok(new { id = existente.Value, existente = true }));
+            var existente = await Dapper.SqlMapper.QueryFirstOrDefaultAsync<SupplyList>(conn,
+                "SELECT * FROM supply_lists WHERE copia_de = @Id AND user_id = @UserId ORDER BY created_at DESC LIMIT 1",
+                new { Id = origenId, UserId = userId });
+            if (existente != null)
+            {
+                if (!string.IsNullOrWhiteSpace(request.Plan) && !string.Equals(existente.Plan, request.Plan, StringComparison.OrdinalIgnoreCase))
+                    await UpdatePlan(existente.Id, new UpdateListPlanRequest
+                    {
+                        Plan = request.Plan, EstudianteNombre = existente.EstudianteNombre, EstudianteGrado = existente.EstudianteGrado, AplicarATodos = true
+                    });
+                return Ok(ApiResponse<object>.Ok(new { id = existente.Id, existente = true }));
+            }
         }
 
         var nuevaId = await Dapper.SqlMapper.ExecuteScalarAsync<Guid>(conn, @"
             INSERT INTO supply_lists (user_id, school_id, grade_id, year, image_url, ocr_text, estado, es_oficial, submitted_by,
                                       fecha_subida, fecha_validacion, ia_estado, extras, copia_de)
             SELECT @UserId, school_id, grade_id, year, image_url, ocr_text, 'VALIDADA', FALSE, submitted_by,
-                   NOW(), NOW(), ia_estado, extras, id
+                   NOW(), NOW(), ia_estado, extras, @Origen
             FROM supply_lists WHERE id = @Id
-            RETURNING id", new { Id = id, request.UserId });
+            RETURNING id", new { Id = id, Origen = origenId, UserId = userId });
 
         await Dapper.SqlMapper.ExecuteAsync(conn, @"
             INSERT INTO supply_items (supply_list_id, product_id, nombre_original, nombre_detectado, cantidad, notas,
                 matched_product_id, matched_quantity, price_at_match, product_economico_id, product_medio_id, product_premium_id,
-                price_economico, price_medio, price_premium, created_at)
+                price_economico, price_medio, price_premium, agregado, created_at)
             SELECT @Nueva, product_id, nombre_original, nombre_detectado, cantidad, notas,
                 matched_product_id, matched_quantity, price_at_match, product_economico_id, product_medio_id, product_premium_id,
-                price_economico, price_medio, price_premium, created_at
+                price_economico, price_medio, price_premium, COALESCE(agregado, FALSE), created_at
             FROM supply_items WHERE supply_list_id = @Id", new { Id = id, Nueva = nuevaId });
 
         if (!string.IsNullOrWhiteSpace(request.Plan))
@@ -541,10 +634,14 @@ public class ListsController : ControllerBase
     }
 
     [HttpPut("{id}/plan")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<bool>>> UpdatePlan(Guid id, [FromBody] UpdateListPlanRequest request)
     {
         var list = await _listRepo.GetById(id);
         if (list == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (!PuedeEditar(list)) return SinPermiso<bool>();
+        if (request.Plan is not ("economico" or "medio" or "premium"))
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_PLAN", "Opción inválida: economico, medio o premium"));
 
         // Update plan and student info
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
@@ -604,9 +701,13 @@ public class ListsController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    /// <summary>El cliente deja un comentario sobre la lista (se agrega, no reemplaza). Público.</summary>
     [HttpPost("{id}/observaciones")]
+    [AllowAnonymous]
     public async Task<IActionResult> AddObservacion(Guid id, [FromBody] AddObservacionRequest req)
     {
+        if (string.IsNullOrWhiteSpace(req.Observacion) || req.Observacion.Length > 2000)
+            return BadRequest(ApiResponse<bool>.Fail("INVALID", "Escribe un comentario (máximo 2000 caracteres)"));
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
         await Dapper.SqlMapper.ExecuteAsync(conn,
             "UPDATE supply_lists SET user_observaciones = COALESCE(user_observaciones, '') || E'\\n' || @Obs, updated_at = NOW() WHERE id = @Id",
@@ -615,6 +716,7 @@ public class ListsController : ControllerBase
     }
 
     [HttpPost("from-text")]
+    [AllowAnonymous]
     public async Task<IActionResult> CreateFromText([FromBody] CreateFromTextRequest request)
     {
         var school = await _schoolRepo.GetById(request.SchoolId);
@@ -623,14 +725,8 @@ public class ListsController : ControllerBase
         var grade = await _gradeRepo.GetById(request.GradeId);
         if (grade == null) return BadRequest(ApiResponse<object>.Fail("NOT_FOUND", "Grado no encontrado"));
 
-        // Validate user exists, set null if not
-        Guid? userId = null;
-        if (request.UserId != Guid.Empty)
-        {
-            var userRepo = HttpContext.RequestServices.GetRequiredService<UserRepository>();
-            var existingUser = await userRepo.GetById(request.UserId);
-            if (existingUser != null) userId = request.UserId;
-        }
+        // La lista es de quien tiene la sesión (se ignora el userId del cuerpo)
+        Guid? userId = User.GetUserId();
 
         var list = new SupplyList
         {
@@ -703,9 +799,12 @@ public class CreateFromTextItem
 
 public class CopiarListaRequest
 {
+    /// <summary>Se ignora: la copia es del usuario de la sesión.</summary>
     public Guid? UserId { get; set; }
     /// <summary>Opción elegida al copiar: economico, medio o premium</summary>
     public string? Plan { get; set; }
+    /// <summary>true: crea otra copia aunque ya exista una (mellizos/hermanos del mismo grado)</summary>
+    public bool? Nueva { get; set; }
 }
 
 public class AddObservacionRequest
