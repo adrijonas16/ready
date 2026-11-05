@@ -193,6 +193,12 @@ public class DatabaseInitializer
             ALTER TABLE products ADD COLUMN IF NOT EXISTS sale_unit VARCHAR(30) DEFAULT 'unidad';
             ALTER TABLE products ADD COLUMN IF NOT EXISTS unit_quantity INTEGER DEFAULT 1;
             ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS extras TEXT;
+            -- Copia personal de una lista oficial: cada familia ajusta la suya sin cambiar la del colegio
+            ALTER TABLE supply_lists ADD COLUMN IF NOT EXISTS copia_de UUID;
+            -- Útiles que el cliente agregó por su cuenta (no vienen en la lista del colegio)
+            ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS agregado BOOLEAN DEFAULT FALSE;
+            -- La usa el admin al crear productos y no estaba en la tabla
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS attributes JSONB;
 
             -- Servicios (forrado, etiquetas, carátulas) como productos para que pasen por carrito y pedido.
             -- Los precios son iniciales: se editan en Admin > Productos (categoría Servicios).
