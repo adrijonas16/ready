@@ -13,52 +13,39 @@ public class UserRepository
         _db = db;
     }
 
+    private const string Columnas = @"id AS Id, email AS Email, password_hash AS PasswordHash, name AS Name,
+                      phone AS Phone, address AS Address, documento AS Documento, role AS Role,
+                      created_at AS CreatedAt, updated_at AS UpdatedAt";
+
     public async Task<User?> GetById(Guid id)
     {
         using var connection = _db.CreateConnection();
-        var query = @"SELECT id AS Id, email AS Email, password_hash AS PasswordHash, name AS Name, 
-                      phone AS Phone, address AS Address, role AS Role, created_at AS CreatedAt, updated_at AS UpdatedAt 
-                      FROM users WHERE id = @Id";
-        var result = await connection.QueryFirstOrDefaultAsync<User>(query, new { Id = id });
-        if (result != null)
-        {
-            Console.WriteLine($"[DEBUG] User from DB - Email: {result.Email}, PwdHash: '{result.PasswordHash}'");
-        }
-        return result;
+        return await connection.QueryFirstOrDefaultAsync<User>($"SELECT {Columnas} FROM users WHERE id = @Id", new { Id = id });
     }
 
     public async Task<User?> GetByEmail(string email)
     {
         using var connection = _db.CreateConnection();
-        var query = @"SELECT id AS Id, email AS Email, password_hash AS PasswordHash, name AS Name, 
-                      phone AS Phone, address AS Address, role AS Role, created_at AS CreatedAt, updated_at AS UpdatedAt 
-                      FROM users WHERE email = @Email";
-        var result = await connection.QueryFirstOrDefaultAsync<User>(query, new { Email = email });
-        if (result != null)
-        {
-            Console.WriteLine($"[DEBUG] User from DB - Email: {result.Email}, PwdHash: '{result.PasswordHash}'");
-        }
-        return result;
+        return await connection.QueryFirstOrDefaultAsync<User>(
+            $"SELECT {Columnas} FROM users WHERE LOWER(email) = LOWER(@Email)", new { Email = email.Trim() });
     }
 
     public async Task<Guid> Create(User user)
     {
         using var connection = _db.CreateConnection();
-        Console.WriteLine($"[DEBUG] Creating user with password_hash: '{user.PasswordHash}'");
-        var id = await connection.ExecuteScalarAsync<Guid>(@"
-            INSERT INTO users (email, password_hash, name, phone, address, role)
-            VALUES (@Email, @PasswordHash, @Name, @Phone, @Address, @Role)
-            RETURNING id", user);
-        Console.WriteLine($"[DEBUG] User created with id: {id}");
-        return id;
+        // El rol se guarda como texto (USER/ADMIN/OPERATOR); Dapper mandaría el número del enum.
+        return await connection.ExecuteScalarAsync<Guid>(@"
+            INSERT INTO users (id, email, password_hash, name, phone, address, documento, role)
+            VALUES (@Id, @Email, @PasswordHash, @Name, @Phone, @Address, @Documento, @Role)
+            RETURNING id", new { user.Id, user.Email, user.PasswordHash, user.Name, user.Phone, user.Address, user.Documento, Role = user.Role.ToString() });
     }
 
     public async Task Update(User user)
     {
         using var connection = _db.CreateConnection();
         await connection.ExecuteAsync(@"
-            UPDATE users SET name = @Name, phone = @Phone, address = @Address, updated_at = NOW()
-            WHERE id = @Id", user);
+            UPDATE users SET name = @Name, phone = @Phone, address = @Address, documento = @Documento, updated_at = NOW()
+            WHERE id = @Id", new { user.Id, user.Name, user.Phone, user.Address, user.Documento });
     }
 }
 
@@ -159,6 +146,34 @@ public class CategoryRepository
         using var connection = _db.CreateConnection();
         await connection.ExecuteAsync("DELETE FROM categories WHERE id = @Id", new { Id = id });
     }
+
+    /// <summary>Productos (activos o no) que usan la categoría.</summary>
+    public async Task<int> ProductsUsing(Guid id)
+    {
+        using var connection = _db.CreateConnection();
+        return await connection.ExecuteScalarAsync<int>(@"
+            SELECT COUNT(*) FROM products p JOIN categories c ON c.name = p.category WHERE c.id = @Id", new { Id = id });
+    }
+
+    public enum RenameResult { Ok, NotFound, Duplicate }
+
+    public async Task<RenameResult> Rename(Guid id, string nuevoNombre)
+    {
+        using var connection = _db.CreateConnection();
+        connection.Open();
+        using var tx = connection.BeginTransaction();
+        var actual = await connection.ExecuteScalarAsync<string?>("SELECT name FROM categories WHERE id = @Id FOR UPDATE", new { Id = id }, tx);
+        if (actual == null) return RenameResult.NotFound;
+        if (actual == nuevoNombre) { tx.Commit(); return RenameResult.Ok; }
+        var duplicada = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM categories WHERE LOWER(name) = LOWER(@Name) AND id <> @Id", new { Id = id, Name = nuevoNombre }, tx);
+        if (duplicada > 0) return RenameResult.Duplicate;
+        await connection.ExecuteAsync("UPDATE categories SET name = @Name WHERE id = @Id", new { Id = id, Name = nuevoNombre }, tx);
+        await connection.ExecuteAsync("UPDATE products SET category = @Name, updated_at = NOW() WHERE category = @Old",
+            new { Name = nuevoNombre, Old = actual }, tx);
+        tx.Commit();
+        return RenameResult.Ok;
+    }
 }
 
 public class SectionRepository
@@ -189,6 +204,14 @@ public class SectionRepository
     {
         using var connection = _db.CreateConnection();
         await connection.ExecuteAsync("DELETE FROM sections WHERE id = @Id", new { Id = id });
+    }
+
+    public async Task<bool> Update(Guid id, string groupName, string name, int sortOrder)
+    {
+        using var connection = _db.CreateConnection();
+        return await connection.ExecuteAsync(
+            "UPDATE sections SET group_name = COALESCE(NULLIF(@GroupName, ''), group_name), name = @Name, sort_order = @SortOrder WHERE id = @Id",
+            new { Id = id, GroupName = groupName, Name = name, SortOrder = sortOrder }) > 0;
     }
 
     public async Task<IEnumerable<Section>> GetBySchoolId(Guid schoolId)

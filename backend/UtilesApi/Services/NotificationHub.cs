@@ -4,14 +4,20 @@ namespace UtilesApi.Services;
 
 public class NotificationHub : Hub
 {
+    // Solo ADMIN/OPERATOR reciben los avisos de la tienda (pedidos, stock, listas nuevas).
+    // El token se envía con accessTokenFactory (llega como ?access_token=).
     public async Task JoinAdminGroup()
     {
+        if (!Context.User.IsStaff()) return;
         await Groups.AddToGroupAsync(Context.ConnectionId, "admins");
     }
 
+    // Cada usuario solo puede escuchar sus propios avisos.
     public async Task JoinUserGroup(string userId)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"user-{userId}");
+        var propio = Context.User.GetUserId();
+        if (propio == null || !string.Equals(propio.Value.ToString(), userId, StringComparison.OrdinalIgnoreCase)) return;
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"user-{propio.Value}");
     }
 }
 
@@ -43,7 +49,7 @@ public class NotificationService : INotificationService
             orderId,
             customerName,
             total,
-            message = $"Nuevo pedido de {customerName} por ${total:N0}",
+            message = $"Nuevo pedido de {customerName} por S/ {total:N2}",
             timestamp = DateTime.UtcNow
         });
     }

@@ -40,7 +40,7 @@ public class AuthService : IAuthService
         var user = new User
         {
             Id = Guid.NewGuid(),
-            Email = email,
+            Email = email.Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
             Name = name,
             Role = RolInicial(email),
@@ -75,36 +75,17 @@ public class AuthService : IAuthService
 
     public async Task<(User?, string)> Login(string email, string password)
     {
-        var user = await _userRepo.GetByEmail(email);
-        if (user == null)
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))
             return (null, string.Empty);
 
-        Console.WriteLine($"User found: {user.Email}, PwdHash length: {user.PasswordHash?.Length}, Hash starts with: {user.PasswordHash?.Substring(0, Math.Min(10, user.PasswordHash.Length))}");
+        var user = await _userRepo.GetByEmail(email);
+        if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !user.PasswordHash.StartsWith("$2"))
+            return (null, string.Empty);
 
-        bool passwordValid = false;
-        
-        if (!string.IsNullOrEmpty(user.PasswordHash))
-        {
-            var pwdHash = user.PasswordHash;
-            Console.WriteLine($"Hash full: {pwdHash}");
-            Console.WriteLine($"Attempting to verify password: {password}");
-            
-            if (pwdHash.StartsWith("$2"))
-            {
-                try 
-                {
-                    passwordValid = BCrypt.Net.BCrypt.Verify(password, pwdHash);
-                    Console.WriteLine($"BCrypt verification result: {passwordValid}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"BCrypt error: {ex.Message}");
-                }
-            }
-        }
-        
-        Console.WriteLine($"Final passwordValid: {passwordValid}");
-        
+        bool passwordValid;
+        try { passwordValid = BCrypt.Net.BCrypt.Verify(password, user.PasswordHash); }
+        catch { passwordValid = false; }
+
         if (!passwordValid)
             return (null, string.Empty);
 

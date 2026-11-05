@@ -78,3 +78,20 @@ NEXT_PUBLIC_API_URL=https://<tu-servicio>.onrender.com/api
 ```
 
 Los pagos siguen siendo de prueba: la tienda no está conectada a una pasarela real.
+
+### Seguridad (JWT y roles)
+
+- Toda la administración exige `Authorization: Bearer <token>` con rol `ADMIN` u `OPERATOR`
+  (productos, variantes, imágenes, categorías, marcas, campañas, noticias, colegios, grados, secciones,
+  revisión de listas, todos los pedidos, estadísticas y `PUT /api/settings`).
+  Ver usuarios y cambiar roles es solo para `ADMIN`; nadie puede cambiar su propio rol.
+- Siguen públicos el catálogo, colegios, listas oficiales, una lista por id, el flujo de lista del cliente
+  (subir, copiar, ajustar útiles/plan/extras de **su** copia, observaciones) y `GET /api/settings`.
+- Comprar (`POST /api/orders`), ver un pedido o los pedidos de un usuario y cancelar exigen sesión:
+  solo el dueño (o ADMIN/OPERATOR). El pedido siempre es del usuario del token y el precio lo calcula la API.
+- El primer administrador sigue siendo quien se registre con `Admin__Email`; los demás roles se asignan
+  desde Admin > Usuarios.
+- **Define `Jwt__Key` con un secreto propio**: con la clave del repositorio cualquiera podría firmar un
+  token de administrador (la API lo avisa en el log al arrancar).
+- Los avisos en tiempo real (SignalR, `/hub/notifications`) también usan el token: el frontend lo envía con
+  `accessTokenFactory` y solo ADMIN/OPERATOR entran al grupo de administración.

@@ -41,6 +41,7 @@ public class SupplyListRepository
                 ia_estado as IaEstado,
                 ia_mensaje as IaMensaje,
                 extras as Extras,
+                copia_de as CopiaDe,
                 created_at as CreatedAt,
                 updated_at as UpdatedAt
             FROM supply_lists WHERE id = @Id", new { Id = id });
@@ -75,7 +76,8 @@ public class SupplyListRepository
     public async Task<IEnumerable<SupplyList>> GetOfficialLists(Guid? schoolId = null, Guid? gradeId = null)
     {
         using var connection = _db.CreateConnection();
-        var sql = "SELECT * FROM supply_lists WHERE (es_oficial = true OR estado = 'VALIDADA' OR estado = 'PROCESADA')";
+        // Las copias personales de cada familia (copia_de) no son listas del colegio
+        var sql = "SELECT * FROM supply_lists WHERE (es_oficial = true OR estado = 'VALIDADA' OR estado = 'PROCESADA') AND copia_de IS NULL";
         var parameters = new DynamicParameters();
 
         if (schoolId.HasValue)
@@ -171,7 +173,11 @@ public class SupplyListRepository
             new { Id = id, Estado = estado, Mensaje = mensaje });
     }
 
-    public async Task UpdateStatus(Guid id, ListStatus status, string? observaciones = null)
+    /// <summary>
+    /// Cambia el estado. observaciones: null = no cambia, "" = borrar. esOficial: null = no cambia.
+    /// Al pasar a EN_REVISION se marca el inicio de revisión; al pasar a VALIDADA, la fecha de validación.
+    /// </summary>
+    public async Task UpdateStatus(Guid id, ListStatus status, string? observaciones = null, bool? esOficial = null)
     {
         using var connection = _db.CreateConnection();
         var sql = "UPDATE supply_lists SET estado = @Status, updated_at = NOW()";
@@ -187,14 +193,32 @@ public class SupplyListRepository
         {
             sql += ", fecha_validacion = NOW()";
         }
-        if (!string.IsNullOrEmpty(observaciones))
+        if (observaciones != null)
         {
-            sql += ", observaciones = @Observaciones";
-            parameters.Add("Observaciones", observaciones);
+            sql += ", observaciones = NULLIF(@Observaciones, '')";
+            parameters.Add("Observaciones", observaciones.Trim());
+        }
+        if (esOficial.HasValue)
+        {
+            sql += ", es_oficial = @EsOficial";
+            parameters.Add("EsOficial", esOficial.Value);
         }
 
         sql += " WHERE id = @Id";
         await connection.ExecuteAsync(sql, parameters);
+    }
+
+    /// <summary>Corrige colegio, grado o año de la lista (null = no cambia).</summary>
+    public async Task UpdateDatos(Guid id, Guid? schoolId, Guid? gradeId, int? year)
+    {
+        using var connection = _db.CreateConnection();
+        await connection.ExecuteAsync(@"
+            UPDATE supply_lists SET
+                school_id = COALESCE(@SchoolId, school_id),
+                grade_id = COALESCE(@GradeId, grade_id),
+                year = COALESCE(@Year, year),
+                updated_at = NOW()
+            WHERE id = @Id", new { Id = id, SchoolId = schoolId, GradeId = gradeId, Year = year });
     }
 }
 

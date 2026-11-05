@@ -317,6 +317,46 @@ public class DatabaseInitializer
             JOIN products p ON p.sku = v.sku
             JOIN product_variant_types t ON t.product_id = p.id AND t.name = v.tipo
             WHERE NOT EXISTS (SELECT 1 FROM product_variant_values x WHERE x.variant_type_id = t.id);
+
+            -- Perfil del cliente: DNI/RUC para boleta o factura
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS documento VARCHAR(20);
+
+            -- Pedido completo: notas de contacto, pago, entrega, comprobante, envío y varias listas (varios hijos)
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS contact_notes TEXT;
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS pago JSONB;
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS entrega JSONB;
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS comprobante JSONB;
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS costo_envio DECIMAL(10,2) DEFAULT 0;
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS supply_list_ids UUID[];
+            ALTER TABLE order_items ADD COLUMN IF NOT EXISTS para VARCHAR(150);
+            CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+            CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+            CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+            CREATE INDEX IF NOT EXISTS idx_campaign_products_product ON campaign_products(product_id);
+            CREATE INDEX IF NOT EXISTS idx_supply_lists_copia_de ON supply_lists(copia_de);
+
+            -- Pedidos antiguos guardaban las notas al final de la dirección: se pasan a contact_notes
+            UPDATE orders SET
+                contact_notes = substr(shipping_address, strpos(shipping_address, E'\n---OBSERVACIONES---\n') + 21),
+                shipping_address = substr(shipping_address, 1, strpos(shipping_address, E'\n---OBSERVACIONES---\n') - 1)
+            WHERE contact_notes IS NULL AND strpos(shipping_address, E'\n---OBSERVACIONES---\n') > 0;
+
+            -- Versiones anteriores guardaban el número del enum en vez del nombre (0 = USER, 1 = ADMIN...)
+            UPDATE users SET role = CASE role WHEN '0' THEN 'USER' WHEN '1' THEN 'ADMIN' WHEN '2' THEN 'OPERATOR' END
+            WHERE role IN ('0', '1', '2');
+            UPDATE orders SET status = CASE status WHEN '0' THEN 'RECIBIDO' WHEN '1' THEN 'EN_PREPARACION' WHEN '2' THEN 'ARMADO'
+                                                   WHEN '3' THEN 'EN_CAMINO' WHEN '4' THEN 'ENTREGADO' WHEN '5' THEN 'CANCELADO' END
+            WHERE status IN ('0', '1', '2', '3', '4', '5');
+
+            -- Configuración de la tienda (una sola fila). Se edita en Admin > Configuración (PUT /api/settings).
+            CREATE TABLE IF NOT EXISTS store_settings (
+                id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                data JSONB NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            INSERT INTO store_settings (id, data) VALUES (1,
+                '{""costoEnvio"": 8, ""envioGratisDesde"": 150, ""whatsapp"": ""51959000111"", ""telefono"": ""959 000 111"", ""horarioEntrega"": ""Lunes a sábado, 9:00 a 18:00"", ""diasEntrega"": 2}'::jsonb)
+            ON CONFLICT (id) DO NOTHING;
         ";
 
         using var cmd = connection.CreateCommand();

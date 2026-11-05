@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using UtilesApi.DTOs;
 using UtilesApi.Services;
@@ -23,53 +24,40 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Register([FromBody] UserRegisterRequest request)
     {
-        var user = await _authService.Register(request.Email, request.Password, request.Name);
+        if (string.IsNullOrWhiteSpace(request.Email) || !request.Email.Contains('@'))
+            return BadRequest(ApiResponse<AuthResponse>.Fail("INVALID_EMAIL", "Escribe un correo válido"));
+        if (string.IsNullOrEmpty(request.Password) || request.Password.Length < 6)
+            return BadRequest(ApiResponse<AuthResponse>.Fail("WEAK_PASSWORD", "La contraseña debe tener al menos 6 caracteres"));
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(ApiResponse<AuthResponse>.Fail("INVALID_NAME", "Escribe tu nombre"));
+
+        var user = await _authService.Register(request.Email, request.Password, request.Name.Trim());
         if (user == null)
             return BadRequest(ApiResponse<AuthResponse>.Fail("EMAIL_EXISTS", "El email ya esta registrado"));
 
         var token = _authService.GenerateToken(user);
-        
-        return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse
-        {
-            Token = token,
-            User = new UserResponse
-            {
-                Id = user.Id,
-                Email = user.Email,
-                Name = user.Name,
-                Role = user.Role.ToString()
-            }
-        }));
+        return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse { Token = token, User = UserResponse.From(user) }));
     }
 
     [HttpPost("login")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Login([FromBody] UserLoginRequest request)
     {
         var (user, token) = await _authService.Login(request.Email, request.Password);
         if (user == null)
             return Unauthorized(ApiResponse<AuthResponse>.Fail("INVALID_CREDENTIALS", "Credenciales invalidas"));
 
-        return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse
-        {
-            Token = token,
-            User = new UserResponse
-            {
-                Id = user.Id,
-                Email = user.Email,
-                Name = user.Name,
-                Phone = user.Phone,
-                Address = user.Address,
-                Role = user.Role.ToString()
-            }
-        }));
+        return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse { Token = token, User = UserResponse.From(user) }));
     }
 
     [HttpGet("me")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<UserResponse>>> GetCurrentUser()
     {
-        var userId = GetUserIdFromToken();
+        var userId = User.GetUserId();
         if (userId == null)
             return Unauthorized(ApiResponse<UserResponse>.Fail("UNAUTHORIZED", "No autorizado"));
 
@@ -77,39 +65,70 @@ public class AuthController : ControllerBase
         if (user == null)
             return NotFound(ApiResponse<UserResponse>.Fail("USER_NOT_FOUND", "Usuario no encontrado"));
 
-        return Ok(ApiResponse<UserResponse>.Ok(new UserResponse
-        {
-            Id = user.Id,
-            Email = user.Email,
-            Name = user.Name,
-            Phone = user.Phone,
-            Address = user.Address,
-            Role = user.Role.ToString()
-        }));
+        return Ok(ApiResponse<UserResponse>.Ok(UserResponse.From(user)));
     }
 
-    private Guid? GetUserIdFromToken()
+    /// <summary>El usuario logueado guarda su nombre, teléfono, dirección y DNI/RUC.</summary>
+    [HttpPut("me")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<UserResponse>>> UpdateCurrentUser([FromBody] UpdateProfileRequest request)
     {
-        var claim = User.FindFirst(ClaimTypes.NameIdentifier);
-        if (claim == null || !Guid.TryParse(claim.Value, out var userId))
-            return null;
-        return userId;
+        var userId = User.GetUserId();
+        if (userId == null)
+            return Unauthorized(ApiResponse<UserResponse>.Fail("UNAUTHORIZED", "No autorizado"));
+
+        var user = await _userRepo.GetById(userId.Value);
+        if (user == null)
+            return NotFound(ApiResponse<UserResponse>.Fail("USER_NOT_FOUND", "Usuario no encontrado"));
+
+        static string? Limpio(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+
+        if (request.Name != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_NAME", "Escribe tu nombre"));
+            user.Name = request.Name.Trim();
+        }
+
+        var phone = Limpio(request.Phone);
+        if (phone != null && !Validacion.TelefonoValido(phone))
+            return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_PHONE", "El teléfono debe tener al menos 6 dígitos"));
+        var documento = Limpio(request.Documento);
+        if (documento != null && !Validacion.DocumentoValido(documento))
+            return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_DOCUMENT", "El DNI debe tener 8 dígitos o el RUC 11"));
+
+        user.Phone = phone;
+        user.Address = Limpio(request.Address);
+        user.Documento = documento;
+        await _userRepo.Update(user);
+
+        return Ok(ApiResponse<UserResponse>.Ok(UserResponse.From(user)));
     }
 
     [HttpGet("users")]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> GetAllUsers()
     {
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
-        var users = await Dapper.SqlMapper.QueryAsync<dynamic>(conn,
-            "SELECT id, email, name, phone, address, role::text as role, created_at FROM users ORDER BY created_at DESC");
+        var users = await Dapper.SqlMapper.QueryAsync<dynamic>(conn, @"
+            SELECT id, email, name, phone, address, documento, role::text as role, created_at, created_at AS ""createdAt""
+            FROM users ORDER BY created_at DESC");
         return Ok(ApiResponse<object>.Ok(users));
     }
 
     [HttpPut("users/{id}/role")]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> UpdateUserRole(Guid id, [FromBody] UpdateRoleRequest req)
     {
+        var role = (req.Role ?? "").Trim().ToUpperInvariant();
+        if (role != AppRoles.User && role != AppRoles.Admin && role != AppRoles.Operator)
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_ROLE", "Rol inválido: usa USER, OPERATOR o ADMIN"));
+        if (User.GetUserId() == id)
+            return BadRequest(ApiResponse<bool>.Fail("OWN_ROLE", "No puedes cambiar tu propio rol"));
+
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
-        await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE users SET role = @Role WHERE id = @Id", new { Id = id, req.Role });
+        var filas = await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE users SET role = @Role, updated_at = NOW() WHERE id = @Id", new { Id = id, Role = role });
+        if (filas == 0) return NotFound(ApiResponse<bool>.Fail("USER_NOT_FOUND", "Usuario no encontrado"));
         return Ok(ApiResponse<bool>.Ok(true));
     }
 }
@@ -172,6 +191,7 @@ public class SchoolsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<ActionResult<ApiResponse<Guid>>> Create([FromBody] CreateSchoolRequest request)
     {
         var school = new Core.Entities.School
@@ -187,6 +207,7 @@ public class SchoolsController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> UpdateSchool(Guid id, [FromBody] CreateSchoolRequest request)
     {
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
@@ -196,6 +217,7 @@ public class SchoolsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> DeleteSchool(Guid id)
     {
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
@@ -204,6 +226,7 @@ public class SchoolsController : ControllerBase
     }
 
     [HttpDelete("{id}/grades/{gradeId}")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> DeleteGrade(Guid id, Guid gradeId)
     {
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
@@ -225,6 +248,7 @@ public class SchoolsController : ControllerBase
     }
 
     [HttpPut("{id}/sections")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> SetSchoolSections(Guid id, [FromBody] SetSchoolSectionsRequest request)
     {
         await _sectionRepo.SetSchoolSections(id, request.SectionIds);
@@ -232,6 +256,7 @@ public class SchoolsController : ControllerBase
     }
 
     [HttpPost("{id}/grades")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<ActionResult<ApiResponse<Guid>>> CreateGrade(Guid id, [FromBody] CreateGradeRequest request)
     {
         var grade = new Core.Entities.Grade
@@ -273,6 +298,7 @@ public class SectionsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<ActionResult<ApiResponse<Guid>>> Create([FromBody] CreateSectionRequest request)
     {
         var section = new Core.Entities.Section
@@ -287,7 +313,19 @@ public class SectionsController : ControllerBase
         return Ok(ApiResponse<Guid>.Ok(id));
     }
 
+    [HttpPut("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
+    public async Task<IActionResult> Update(Guid id, [FromBody] CreateSectionRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_NAME", "Escribe el nombre de la sección"));
+        var ok = await _sectionRepo.Update(id, request.GroupName?.Trim() ?? "", request.Name.Trim(), request.SortOrder);
+        if (!ok) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Sección no encontrada"));
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
     [HttpDelete("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> Delete(Guid id)
     {
         await _sectionRepo.Delete(id);
@@ -325,15 +363,39 @@ public class CategoriesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> Create([FromBody] CreateCategoryRequest req)
     {
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest(ApiResponse<Guid>.Fail("INVALID_NAME", "Escribe el nombre de la categoría"));
         var id = await _catRepo.Create(req.Name.Trim());
         return Ok(ApiResponse<Guid>.Ok(id));
     }
 
+    /// <summary>Renombra la categoría y, en la misma transacción, los productos que la usan.</summary>
+    [HttpPut("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
+    public async Task<IActionResult> Update(Guid id, [FromBody] CreateCategoryRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_NAME", "Escribe el nombre de la categoría"));
+        var resultado = await _catRepo.Rename(id, req.Name.Trim());
+        return resultado switch
+        {
+            CategoryRepository.RenameResult.NotFound => NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Categoría no encontrada")),
+            CategoryRepository.RenameResult.Duplicate => Conflict(ApiResponse<bool>.Fail("CATEGORY_EXISTS", "Ya existe una categoría con ese nombre")),
+            _ => Ok(ApiResponse<bool>.Ok(true))
+        };
+    }
+
     [HttpDelete("{id}")]
+    [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> Delete(Guid id)
     {
+        var enUso = await _catRepo.ProductsUsing(id);
+        if (enUso > 0)
+            return Conflict(ApiResponse<bool>.Fail("CATEGORY_IN_USE",
+                $"No se puede borrar: {enUso} producto(s) usan esta categoría. Cámbialos de categoría primero."));
         await _catRepo.Delete(id);
         return Ok(ApiResponse<bool>.Ok(true));
     }
