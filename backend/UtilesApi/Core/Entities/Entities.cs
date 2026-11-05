@@ -91,6 +91,7 @@ public class SupplyItem
     public Guid? MatchedProductId { get; set; }
     public int? MatchedQuantity { get; set; }
     public decimal? PriceAtMatch { get; set; }
+    public bool Agregado { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public int? UserCustomQuantity { get; set; }

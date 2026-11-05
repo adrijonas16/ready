@@ -91,6 +91,8 @@ public class SupplyItemResponse
     public Guid? ProductPremiumId { get; set; }
     public ProductResponse? ProductPremium { get; set; }
     public decimal? PricePremium { get; set; }
+    /// <summary>true si el cliente lo agregó por su cuenta (no viene en la lista del colegio)</summary>
+    public bool Agregado { get; set; }
 }
 
 public class ListDetailResponse

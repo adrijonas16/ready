@@ -237,6 +237,7 @@ public class SupplyItemRepository
                 COALESCE(caratula, FALSE) as Caratula,
                 caratula_curso as CaratulaCurso,
                 datos_estudiante as DatosEstudiante,
+                COALESCE(agregado, FALSE) as Agregado,
                 created_at as CreatedAt,
                 updated_at as UpdatedAt
             FROM supply_items WHERE supply_list_id = @ListId",
@@ -247,8 +248,8 @@ public class SupplyItemRepository
     {
         using var connection = _db.CreateConnection();
         var id = await connection.ExecuteScalarAsync<Guid>(@"
-            INSERT INTO supply_items (supply_list_id, product_id, nombre_original, nombre_detectado, cantidad, notas, matched_product_id, matched_quantity, price_at_match)
-            VALUES (@SupplyListId, @ProductId, @NombreOriginal, @NombreDetectado, @Cantidad, @Notas, @MatchedProductId, @MatchedQuantity, @PriceAtMatch)
+            INSERT INTO supply_items (supply_list_id, product_id, nombre_original, nombre_detectado, cantidad, notas, matched_product_id, matched_quantity, price_at_match, agregado)
+            VALUES (@SupplyListId, @ProductId, @NombreOriginal, @NombreDetectado, @Cantidad, @Notas, @MatchedProductId, @MatchedQuantity, @PriceAtMatch, @Agregado)
             RETURNING id", new {
                 item.SupplyListId,
                 item.ProductId,
@@ -258,7 +259,8 @@ public class SupplyItemRepository
                 item.Notas,
                 item.MatchedProductId,
                 item.MatchedQuantity,
-                item.PriceAtMatch
+                item.PriceAtMatch,
+                item.Agregado
             });
         return id;
     }

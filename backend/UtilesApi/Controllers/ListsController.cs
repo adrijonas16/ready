@@ -219,7 +219,8 @@ public class ListsController : ControllerBase
                 EtiquetaDibujo = i.EtiquetaDibujo,
                 Caratula = i.Caratula,
                 CaratulaCurso = i.CaratulaCurso,
-                DatosEstudiante = i.DatosEstudiante
+                DatosEstudiante = i.DatosEstudiante,
+                Agregado = i.Agregado
             }).ToList()
         }));
     }
@@ -454,13 +455,19 @@ public class ListsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.NombreOriginal))
             return BadRequest(ApiResponse<SupplyItemResponse>.Fail("INVALID", "Escribe el nombre del útil"));
 
+        var cantidad = request.Cantidad > 0 ? request.Cantidad : 1;
+        var producto = request.ProductId.HasValue ? await _productRepo.GetById(request.ProductId.Value) : null;
         var item = new SupplyItem
         {
             SupplyListId = id,
             NombreOriginal = request.NombreOriginal.Trim(),
-            NombreDetectado = request.NombreOriginal.Trim(),
-            Cantidad = request.Cantidad > 0 ? request.Cantidad : 1,
+            NombreDetectado = producto?.Name ?? request.NombreOriginal.Trim(),
+            Cantidad = cantidad,
             Notas = request.Notas,
+            MatchedProductId = producto?.Id,
+            MatchedQuantity = producto != null ? cantidad : null,
+            PriceAtMatch = producto?.BasePrice,
+            Agregado = request.PorCliente || producto != null,
             CreatedAt = DateTime.UtcNow,
         };
         item.Id = await _itemRepo.Create(item);
@@ -473,6 +480,10 @@ public class ListsController : ControllerBase
             NombreDetectado = item.NombreDetectado,
             Cantidad = item.Cantidad,
             Notas = item.Notas,
+            MatchedProductId = item.MatchedProductId,
+            MatchedQuantity = item.MatchedQuantity,
+            PriceAtMatch = item.PriceAtMatch,
+            Agregado = item.Agregado,
         }));
     }
 
@@ -484,6 +495,49 @@ public class ListsController : ControllerBase
             return NotFound(ApiResponse<bool>.Fail("ITEM_NOT_FOUND", "Item no encontrado"));
         await _itemRepo.Delete(itemId);
         return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    /// <summary>
+    /// Copia personal de una lista (normalmente la oficial del colegio) para que cada familia
+    /// cambie productos, cantidades y extras sin tocar la lista que ven los demás.
+    /// Si el usuario ya tiene una copia de esa lista, devuelve la misma.
+    /// </summary>
+    [HttpPost("{id}/copia")]
+    public async Task<ActionResult<ApiResponse<object>>> Copiar(Guid id, [FromBody] CopiarListaRequest request)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<object>.Fail("NOT_FOUND", "Lista no encontrada"));
+
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        if (request.UserId.HasValue)
+        {
+            var existente = await Dapper.SqlMapper.ExecuteScalarAsync<Guid?>(conn,
+                "SELECT id FROM supply_lists WHERE copia_de = @Id AND user_id = @UserId ORDER BY created_at DESC LIMIT 1",
+                new { Id = id, request.UserId });
+            if (existente.HasValue) return Ok(ApiResponse<object>.Ok(new { id = existente.Value, existente = true }));
+        }
+
+        var nuevaId = await Dapper.SqlMapper.ExecuteScalarAsync<Guid>(conn, @"
+            INSERT INTO supply_lists (user_id, school_id, grade_id, year, image_url, ocr_text, estado, es_oficial, submitted_by,
+                                      fecha_subida, fecha_validacion, ia_estado, extras, copia_de)
+            SELECT @UserId, school_id, grade_id, year, image_url, ocr_text, 'VALIDADA', FALSE, submitted_by,
+                   NOW(), NOW(), ia_estado, extras, id
+            FROM supply_lists WHERE id = @Id
+            RETURNING id", new { Id = id, request.UserId });
+
+        await Dapper.SqlMapper.ExecuteAsync(conn, @"
+            INSERT INTO supply_items (supply_list_id, product_id, nombre_original, nombre_detectado, cantidad, notas,
+                matched_product_id, matched_quantity, price_at_match, product_economico_id, product_medio_id, product_premium_id,
+                price_economico, price_medio, price_premium, created_at)
+            SELECT @Nueva, product_id, nombre_original, nombre_detectado, cantidad, notas,
+                matched_product_id, matched_quantity, price_at_match, product_economico_id, product_medio_id, product_premium_id,
+                price_economico, price_medio, price_premium, created_at
+            FROM supply_items WHERE supply_list_id = @Id", new { Id = id, Nueva = nuevaId });
+
+        if (!string.IsNullOrWhiteSpace(request.Plan))
+            await UpdatePlan(nuevaId, new UpdateListPlanRequest { Plan = request.Plan, AplicarATodos = true });
+
+        return Ok(ApiResponse<object>.Ok(new { id = nuevaId, existente = false }));
     }
 
     [HttpPut("{id}/plan")]
@@ -504,6 +558,9 @@ public class ListsController : ControllerBase
         var items = aplicar ? await _itemRepo.GetByListId(id) : Enumerable.Empty<SupplyItem>();
         foreach (var item in items)
         {
+            // Lo que el cliente agregó por su cuenta se queda como lo eligió
+            if (item.Agregado) continue;
+
             // Si un útil no tiene producto en ese nivel, se usa el más cercano (igual que en el frontend).
             var tierProductId = request.Plan switch
             {
@@ -638,6 +695,17 @@ public class CreateFromTextItem
     public string NombreOriginal { get; set; } = "";
     public int Cantidad { get; set; } = 1;
     public string? Notas { get; set; }
+    /// <summary>Producto del catálogo elegido por el cliente al agregar un útil a su lista</summary>
+    public Guid? ProductId { get; set; }
+    /// <summary>true cuando lo agrega el cliente (no el admin al revisar): no cambia al elegir otra opción</summary>
+    public bool PorCliente { get; set; }
+}
+
+public class CopiarListaRequest
+{
+    public Guid? UserId { get; set; }
+    /// <summary>Opción elegida al copiar: economico, medio o premium</summary>
+    public string? Plan { get; set; }
 }
 
 public class AddObservacionRequest
