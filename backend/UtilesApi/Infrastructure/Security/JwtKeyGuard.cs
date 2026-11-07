@@ -15,7 +15,7 @@ public static class JwtKeyGuard
     /// <summary>SHA-256 de claves que estuvieron publicadas en el repositorio (no se guardan en claro).</summary>
     private static readonly HashSet<string> ClavesPublicadas = new(StringComparer.OrdinalIgnoreCase)
     {
-        // Jwt:Key de appsettings.json (commits d0969f8 … 3cc1393)
+        // Jwt:Key de appsettings.json (commits 3cc6c61 … 3cc1393, abril–noviembre 2026)
         "6c39d5b635a1aab68bc9ca0d6c0498bf9c8381abaa5b669b0cec18a084ddfaec",
         // Valor por defecto que usaban Program.cs y AuthService cuando faltaba la clave
         "e2fee058374c853c2682fa69829d3f29c4ce4653f58bff0a735493bc204212dd",

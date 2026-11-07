@@ -76,7 +76,7 @@ En tu equipo, los secretos van en `backend/UtilesApi/appsettings.Development.loc
 
 ```json
 { "ConnectionStrings": { "DefaultConnection": "Host=localhost;Port=5434;Database=ready;Username=ready_user;Password=..." },
-  "Jwt": { "Key": "una-clave-local-de-32-caracteres-o-mas" } }
+  "Jwt": { "Key": "<clave-local-de-32-caracteres-o-mas>" } }
 ```
 
 En Development, si falta `Jwt:Key`, la API usa una clave aleatoria temporal (las sesiones se pierden al reiniciar).
