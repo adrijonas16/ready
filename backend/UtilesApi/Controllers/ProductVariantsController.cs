@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Dapper;
 using UtilesApi.DTOs;
+using UtilesApi.Infrastructure.Security;
 using UtilesApi.Infrastructure.Database;
 using UtilesApi.Services;
 
@@ -65,6 +66,10 @@ public class ProductVariantsController : ControllerBase
     [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> CreateVariantValue(Guid productId, Guid typeId, [FromBody] CreateVariantValueRequest req)
     {
+        if (string.IsNullOrWhiteSpace(req.Value) || req.Value.Length > 100)
+            return BadRequest(ApiResponse<Guid>.Fail("INVALID", "Escribe la opción (hasta 100 caracteres)"));
+        if (req.Stock < 0) return BadRequest(ApiResponse<Guid>.Fail("INVALID", "El stock no puede ser negativo"));
+        if (req.PriceModifier is < -10000 or > 10000) return BadRequest(ApiResponse<Guid>.Fail("INVALID", "El recargo está fuera de rango"));
         using var conn = _db.CreateConnection();
         var tipoDelProducto = await conn.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM product_variant_types WHERE id = @TypeId AND product_id = @ProductId", new { TypeId = typeId, ProductId = productId });
@@ -87,6 +92,10 @@ public class ProductVariantsController : ControllerBase
             return BadRequest(ApiResponse<bool>.Fail("INVALID_VALUE", "Escribe el nombre de la opción"));
         if (req.Stock is < 0)
             return BadRequest(ApiResponse<bool>.Fail("INVALID_STOCK", "El stock no puede ser negativo"));
+        if (req.PriceModifier is < -10000 or > 10000)
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_PRICE", "El recargo está fuera de rango"));
+        if (req.Value != null && req.Value.Length > 100)
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_VALUE", "La opción puede tener hasta 100 caracteres"));
 
         using var conn = _db.CreateConnection();
         var filas = await conn.ExecuteAsync(@"
@@ -130,12 +139,17 @@ public class ProductVariantsController : ControllerBase
     // POST upload variant image
     [HttpPost("values/{valueId}/image")]
     [Authorize(Roles = AppRoles.Staff)]
+    [RequestSizeLimit(Archivos.MaxBytesSubida)]
+    [RequestFormLimits(MultipartBodyLengthLimit = Archivos.MaxBytesSubida)]
     public async Task<IActionResult> UploadVariantImage(Guid productId, Guid valueId, [FromForm] IFormFile file)
     {
         if (file == null) return BadRequest(ApiResponse<object>.Fail("NO_FILE", "Sube una imagen"));
+        var info = await Archivos.Validar(file, Archivos.Imagenes);
+        if (info.Error != null) return BadRequest(ApiResponse<object>.Fail("INVALID_FILE", info.Error));
 
         var storage = HttpContext.RequestServices.GetRequiredService<UtilesApi.Infrastructure.Storage.IStorageService>();
-        var imageUrl = await storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+        await using var stream = file.OpenReadStream();
+        var imageUrl = await storage.UploadFileAsync(stream, info.NombreSeguro, info.ContentType);
 
         using var conn = _db.CreateConnection();
         await conn.ExecuteAsync("UPDATE product_variant_values SET image_url = @Url WHERE id = @Id",
@@ -164,17 +178,22 @@ public class ProductVariantsController : ControllerBase
     // POST upload product image (multipart 'file') → la imagen creada. La primera foto queda como principal.
     [HttpPost("~/api/products/{productId}/images")]
     [Authorize(Roles = AppRoles.Staff)]
+    [RequestSizeLimit(Archivos.MaxBytesSubida)]
+    [RequestFormLimits(MultipartBodyLengthLimit = Archivos.MaxBytesSubida)]
     public async Task<IActionResult> UploadImage(Guid productId, [FromForm] IFormFile file, [FromForm] string? altText, [FromForm] bool isPrimary = false)
     {
         if (file == null || file.Length == 0) return BadRequest(ApiResponse<object>.Fail("NO_FILE", "Sube una imagen"));
-        if (!file.ContentType.StartsWith("image/")) return BadRequest(ApiResponse<object>.Fail("INVALID_TYPE", "Solo se permiten imágenes"));
+        var info = await Archivos.Validar(file, Archivos.Imagenes);
+        if (info.Error != null) return BadRequest(ApiResponse<object>.Fail("INVALID_TYPE", info.Error));
+        if (!Validacion.Largo(altText, 200)) return BadRequest(ApiResponse<object>.Fail("INVALID", "El texto alternativo puede tener hasta 200 caracteres"));
 
         using var conn = _db.CreateConnection();
         var existe = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM products WHERE id = @Id", new { Id = productId });
         if (existe == 0) return NotFound(ApiResponse<object>.Fail("NOT_FOUND", "Producto no encontrado"));
 
         var storage = HttpContext.RequestServices.GetRequiredService<UtilesApi.Infrastructure.Storage.IStorageService>();
-        var imageUrl = await storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+        await using var stream = file.OpenReadStream();
+        var imageUrl = await storage.UploadFileAsync(stream, info.NombreSeguro, info.ContentType);
 
         conn.Open();
         using var tx = conn.BeginTransaction();

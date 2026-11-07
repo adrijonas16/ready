@@ -6,6 +6,8 @@ using UtilesApi.DTOs;
 using UtilesApi.Infrastructure.Database;
 using UtilesApi.Core.Entities;
 using UtilesApi.Services;
+using Microsoft.AspNetCore.RateLimiting;
+using UtilesApi.Infrastructure.Security;
 
 namespace UtilesApi.Controllers;
 
@@ -14,8 +16,8 @@ namespace UtilesApi.Controllers;
 [Authorize]
 public class OrdersController : ControllerBase
 {
-    private const int MaxItems = 300;
-    private const int MaxCantidad = 1000;
+    private const int MaxItems = 200;
+    private const int MaxCantidad = 99;
 
     private readonly IDbConnectionFactory _db;
     private readonly ProductRepository _productRepo;
@@ -44,6 +46,8 @@ public class OrdersController : ControllerBase
     /// de la tienda (gratis desde envioGratisDesde). Descuenta stock (sin bajar de 0).
     /// </summary>
     [HttpPost]
+    [EnableRateLimiting(RateLimits.Orders)]
+    [Honeypot]
     public async Task<ActionResult<ApiResponse<OrderResponse>>> Create([FromBody] CreateOrderRequest request)
     {
         var userId = User.GetUserId();
@@ -388,20 +392,30 @@ public class OrdersController : ControllerBase
     {
         if (r.Items == null || r.Items.Count == 0) return "La orden debe tener al menos un producto";
         if (r.Items.Count > MaxItems) return $"La orden no puede tener más de {MaxItems} líneas";
-        if (r.Items.Any(i => i.Quantity <= 0 || i.Quantity > MaxCantidad)) return $"Cada cantidad debe estar entre 1 y {MaxCantidad}";
+        if (r.Items.Any(i => i.Quantity < 1 || i.Quantity > MaxCantidad)) return $"Cada cantidad debe estar entre 1 y {MaxCantidad}";
+        if (r.Items.Any(i => i.ProductId == Guid.Empty)) return "Hay un producto inválido en el pedido";
+        if (r.Items.Any(i => i.UnitPrice is < 0)) return "El precio no puede ser negativo";
+        if (r.Items.Any(i => !Validacion.Largo(i.Notes, 1000) || !Validacion.Largo(i.Para, 150)))
+            return "Las notas de un producto son demasiado largas";
         if (string.IsNullOrWhiteSpace(r.ShippingAddress)) return "Escribe la dirección de entrega";
-        if (r.ShippingAddress.Length > 1000) return "La dirección es demasiado larga";
-        if (!Validacion.TelefonoValido(r.ShippingPhone)) return "Escribe un teléfono válido (solo números, al menos 6 dígitos)";
+        if (r.ShippingAddress.Trim().Length < 5) return "Agrega más detalle a la dirección: calle, número y distrito";
+        if (r.ShippingAddress.Length > 300) return "La dirección puede tener hasta 300 caracteres";
+        if (!Validacion.SinControl(r.ShippingAddress)) return "La dirección tiene caracteres no permitidos";
+        if (Validacion.CelularPeru(r.ShippingPhone) == null) return "Escribe un celular de 9 dígitos que empiece con 9 (puedes poner +51)";
+        if (!Validacion.Largo(r.ContactNotes, 2000)) return "Las indicaciones pueden tener hasta 2000 caracteres";
+        if ((r.SupplyListIds?.Count ?? 0) > 50) return "Demasiadas listas en un pedido";
         if (r.Comprobante != null)
         {
             var tipo = (r.Comprobante.Tipo ?? "").Trim().ToLowerInvariant();
             if (tipo != "boleta" && tipo != "factura") return "El comprobante debe ser boleta o factura";
             if (tipo == "factura")
             {
-                if (!Validacion.RucValido(r.Comprobante.Documento)) return "Para factura escribe un RUC de 11 dígitos";
-                if (string.IsNullOrWhiteSpace(r.Comprobante.RazonSocial)) return "Para factura escribe la razón social";
+                if (!Validacion.RucPeruValido(r.Comprobante.Documento)) return "Para factura escribe un RUC de 11 dígitos que empiece con 10 o 20";
+                var razon = r.Comprobante.RazonSocial?.Trim() ?? "";
+                if (razon.Length < 3) return "Para factura escribe la razón social";
+                if (razon.Length > 200) return "La razón social puede tener hasta 200 caracteres";
             }
-            else if (!string.IsNullOrWhiteSpace(r.Comprobante.Documento) && !Validacion.DocumentoValido(r.Comprobante.Documento))
+            else if (!string.IsNullOrWhiteSpace(r.Comprobante.Documento) && !Validacion.DniValido(r.Comprobante.Documento))
                 return "El DNI debe tener 8 dígitos";
         }
         return null;

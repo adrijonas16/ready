@@ -94,7 +94,8 @@ public class AuthService : IAuthService
 
     public string GenerateToken(User user)
     {
-        var key = _configuration["Jwt:Key"] ?? "DefaultSecretKey123456789012345678901234";
+        // Program.cs (JwtKeyGuard) garantiza una clave válida al arrancar
+        var key = _configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key no está configurada");
         var issuer = _configuration["Jwt:Issuer"] ?? "UtilesApi";
         var audience = _configuration["Jwt:Audience"] ?? "UtilesClient";
 

@@ -5,6 +5,8 @@ using UtilesApi.DTOs;
 using UtilesApi.Infrastructure.Database;
 using UtilesApi.Infrastructure.Storage;
 using UtilesApi.Services;
+using Microsoft.AspNetCore.RateLimiting;
+using UtilesApi.Infrastructure.Security;
 
 namespace UtilesApi.Controllers;
 
@@ -82,6 +84,39 @@ public class ListsController : ControllerBase
         ? Unauthorized(ApiResponse<T>.Fail("UNAUTHORIZED", "Inicia sesión para cambiar esta lista"))
         : StatusCode(403, ApiResponse<T>.Fail("FORBIDDEN", "Esta lista no es tuya: haz una copia para cambiarla"));
 
+    public const int MaxItemsLista = 300;
+    public const int MaxObservacion = 1000;
+    public const int MaxNombreUtil = 200;
+    public const int MaxNotas = 500;
+    public const int MaxCantidadUtil = 999;
+
+    /// <summary>Útil nuevo (agregado por el cliente o en una lista escrita a mano).</summary>
+    private static string? ValidarItemNuevo(CreateFromTextItem i)
+    {
+        if (string.IsNullOrWhiteSpace(i.NombreOriginal)) return "Escribe el nombre del útil";
+        if (i.NombreOriginal.Trim().Length > MaxNombreUtil) return $"El nombre del útil puede tener hasta {MaxNombreUtil} caracteres";
+        if (!Validacion.Largo(i.Notas, MaxNotas)) return $"Las notas pueden tener hasta {MaxNotas} caracteres";
+        if (!Validacion.SinControl(i.NombreOriginal) || !Validacion.SinControl(i.Notas)) return "El texto tiene caracteres no permitidos";
+        if (i.Cantidad < 0 || i.Cantidad > MaxCantidadUtil) return $"La cantidad debe estar entre 1 y {MaxCantidadUtil}";
+        return null;
+    }
+
+    private static string? ValidarCambioItem(UpdateSupplyItemRequest r)
+    {
+        if (r.NombreOriginal != null && (string.IsNullOrWhiteSpace(r.NombreOriginal) || r.NombreOriginal.Length > MaxNombreUtil))
+            return $"El nombre del útil debe tener entre 1 y {MaxNombreUtil} caracteres";
+        if (!Validacion.Largo(r.NombreDetectado, MaxNombreUtil)) return $"El nombre puede tener hasta {MaxNombreUtil} caracteres";
+        if (!Validacion.Largo(r.Notas, MaxNotas) || !Validacion.Largo(r.UserNotas, MaxNotas) || !Validacion.Largo(r.DatosEstudiante, MaxNotas))
+            return $"Las notas pueden tener hasta {MaxNotas} caracteres";
+        if (!Validacion.Largo(r.ForroColor, 60) || !Validacion.Largo(r.Etiqueta, 200) || !Validacion.Largo(r.CaratulaCurso, 100))
+            return "Uno de los textos es demasiado largo";
+        if (r.Cantidad is < 0 or > MaxCantidadUtil || r.UserCustomQuantity is < 0 or > MaxCantidadUtil)
+            return $"La cantidad debe estar entre 0 y {MaxCantidadUtil}";
+        foreach (var t in new[] { r.NombreOriginal, r.NombreDetectado, r.Notas, r.UserNotas, r.ForroColor, r.Etiqueta, r.CaratulaCurso, r.DatosEstudiante })
+            if (!Validacion.SinControl(t)) return "El texto tiene caracteres no permitidos";
+        return null;
+    }
+
     private static ListResponse Mapear(SupplyList list, string schoolName, string gradeName, bool detalle) => new()
     {
         Id = list.Id,
@@ -113,21 +148,42 @@ public class ListsController : ControllerBase
 
     [HttpPost("upload")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.Upload)]
+    [RequestSizeLimit(Archivos.MaxBytesSubida)]
+    [RequestFormLimits(MultipartBodyLengthLimit = Archivos.MaxBytesSubida)]
+    [Honeypot]
     public async Task<ActionResult<ApiResponse<ListResponse>>> Upload([FromForm] List<IFormFile> files, [FromForm] Guid userId, [FromForm] Guid schoolId, [FromForm] Guid gradeId, [FromForm] int year, [FromForm] string? submittedBy)
     {
         if (files == null || files.Count == 0)
             return BadRequest(ApiResponse<ListResponse>.Fail("NO_FILE", "Debe subir al menos una imagen"));
 
-        if (files.Count > 5)
-            return BadRequest(ApiResponse<ListResponse>.Fail("TOO_MANY", "Maximo 5 imagenes"));
+        if (files.Count > Archivos.MaxArchivosLista)
+            return BadRequest(ApiResponse<ListResponse>.Fail("TOO_MANY", $"Máximo {Archivos.MaxArchivosLista} archivos por lista"));
+        if (year is < 2000 or > 2100)
+            return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_YEAR", "Año inválido"));
+        if (!Validacion.Largo(submittedBy, 100) || !Validacion.SinControl(submittedBy))
+            return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_NAME", "El nombre puede tener hasta 100 caracteres"));
+        if (await _schoolRepo.GetById(schoolId) == null)
+            return BadRequest(ApiResponse<ListResponse>.Fail("SCHOOL_NOT_FOUND", "Colegio no encontrado"));
+        var gradoElegido = await _gradeRepo.GetById(gradeId);
+        if (gradoElegido == null || gradoElegido.SchoolId != schoolId)
+            return BadRequest(ApiResponse<ListResponse>.Fail("GRADE_NOT_FOUND", "Elige un grado del colegio"));
 
-        var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
-        var imageUrls = new List<string>();
+        // Tipo real del archivo (firma), no el que dice el navegador; máximo 10 MB cada uno
+        var revisados = new List<(IFormFile File, Archivos.Resultado Info)>();
         foreach (var file in files)
         {
-            if (!allowedTypes.Contains(file.ContentType))
-                return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_TYPE", $"Solo se permiten imagenes, PDF o Word. Archivo invalido: {file.FileName}"));
-            var url = await _storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+            var info = await Archivos.Validar(file, Archivos.Lista);
+            if (info.Error != null)
+                return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_FILE", info.Error));
+            revisados.Add((file, info));
+        }
+
+        var imageUrls = new List<string>();
+        foreach (var (file, info) in revisados)
+        {
+            await using var stream = file.OpenReadStream();
+            var url = await _storage.UploadFileAsync(stream, info.NombreSeguro, info.ContentType);
             imageUrls.Add(url);
         }
         var imageUrl = string.Join("|", imageUrls);
@@ -144,7 +200,7 @@ public class ListsController : ControllerBase
             ImageUrl = imageUrl,
             Estado = ListStatus.PENDIENTE_REVISION,
             EsOficial = false,
-            SubmittedBy = submittedBy,
+            SubmittedBy = string.IsNullOrWhiteSpace(submittedBy) ? null : submittedBy.Trim(),
             FechaSubida = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -386,6 +442,8 @@ public class ListsController : ControllerBase
         var lista = await _listRepo.GetById(id);
         if (lista == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
         if (!PuedeEditar(lista)) return SinPermiso<bool>();
+        var errorItem = ValidarCambioItem(request);
+        if (errorItem != null) return BadRequest(ApiResponse<bool>.Fail("INVALID", errorItem));
 
         var items = await _itemRepo.GetByListId(id);
         var item = items.FirstOrDefault(i => i.Id == itemId);
@@ -518,13 +576,19 @@ public class ListsController : ControllerBase
 
     [HttpPost("{id}/items")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.Items)]
+    [Honeypot]
     public async Task<ActionResult<ApiResponse<SupplyItemResponse>>> AddItem(Guid id, [FromBody] CreateFromTextItem request)
     {
         var list = await _listRepo.GetById(id);
         if (list == null) return NotFound(ApiResponse<SupplyItemResponse>.Fail("NOT_FOUND", "Lista no encontrada"));
         if (!PuedeEditar(list)) return SinPermiso<SupplyItemResponse>();
-        if (string.IsNullOrWhiteSpace(request.NombreOriginal))
-            return BadRequest(ApiResponse<SupplyItemResponse>.Fail("INVALID", "Escribe el nombre del útil"));
+        var errorItem = ValidarItemNuevo(request);
+        if (errorItem != null)
+            return BadRequest(ApiResponse<SupplyItemResponse>.Fail("INVALID", errorItem));
+        var totalItems = (await _itemRepo.GetByListId(id)).Count();
+        if (totalItems >= MaxItemsLista)
+            return BadRequest(ApiResponse<SupplyItemResponse>.Fail("TOO_MANY", $"La lista ya tiene {MaxItemsLista} útiles"));
 
         var cantidad = request.Cantidad > 0 ? request.Cantidad : 1;
         var producto = request.ProductId.HasValue ? await _productRepo.GetById(request.ProductId.Value) : null;
@@ -642,6 +706,9 @@ public class ListsController : ControllerBase
         if (!PuedeEditar(list)) return SinPermiso<bool>();
         if (request.Plan is not ("economico" or "medio" or "premium"))
             return BadRequest(ApiResponse<bool>.Fail("INVALID_PLAN", "Opción inválida: economico, medio o premium"));
+        if (!Validacion.Largo(request.EstudianteNombre, 100) || !Validacion.Largo(request.EstudianteGrado, 60) ||
+            !Validacion.SinControl(request.EstudianteNombre) || !Validacion.SinControl(request.EstudianteGrado))
+            return BadRequest(ApiResponse<bool>.Fail("INVALID", "El nombre del alumno puede tener hasta 100 caracteres y el grado hasta 60"));
 
         // Update plan and student info
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
@@ -704,21 +771,43 @@ public class ListsController : ControllerBase
     /// <summary>El cliente deja un comentario sobre la lista (se agrega, no reemplaza). Público.</summary>
     [HttpPost("{id}/observaciones")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.Observaciones)]
+    [Honeypot]
     public async Task<IActionResult> AddObservacion(Guid id, [FromBody] AddObservacionRequest req)
     {
-        if (string.IsNullOrWhiteSpace(req.Observacion) || req.Observacion.Length > 2000)
-            return BadRequest(ApiResponse<bool>.Fail("INVALID", "Escribe un comentario (máximo 2000 caracteres)"));
+        var texto = req.Observacion?.Trim();
+        if (string.IsNullOrWhiteSpace(texto) || texto.Length > MaxObservacion || !Validacion.SinControl(texto))
+            return BadRequest(ApiResponse<bool>.Fail("INVALID", $"Escribe un comentario (máximo {MaxObservacion} caracteres)"));
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
-        await Dapper.SqlMapper.ExecuteAsync(conn,
-            "UPDATE supply_lists SET user_observaciones = COALESCE(user_observaciones, '') || E'\\n' || @Obs, updated_at = NOW() WHERE id = @Id",
-            new { Id = id, Obs = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm}] {req.Observacion}" });
+        // Tope total para que nadie llene la columna a base de comentarios
+        var filas = await Dapper.SqlMapper.ExecuteAsync(conn,
+            "UPDATE supply_lists SET user_observaciones = COALESCE(user_observaciones, '') || E'\\n' || @Obs, updated_at = NOW() " +
+            "WHERE id = @Id AND COALESCE(LENGTH(user_observaciones), 0) < 20000",
+            new { Id = id, Obs = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm}] {texto}" });
+        if (filas == 0)
+        {
+            var existe = await _listRepo.GetById(id);
+            return existe == null
+                ? NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"))
+                : BadRequest(ApiResponse<bool>.Fail("TOO_MANY", "La lista ya tiene demasiados comentarios"));
+        }
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
     [HttpPost("from-text")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.Upload)]
     public async Task<IActionResult> CreateFromText([FromBody] CreateFromTextRequest request)
     {
+        if (request.Items == null || request.Items.Count == 0)
+            return BadRequest(ApiResponse<object>.Fail("INVALID", "Agrega al menos un útil"));
+        if (request.Items.Count > MaxItemsLista)
+            return BadRequest(ApiResponse<object>.Fail("TOO_MANY", $"Máximo {MaxItemsLista} útiles por lista"));
+        if (request.Year is < 2000 or > 2100)
+            return BadRequest(ApiResponse<object>.Fail("INVALID_YEAR", "Año inválido"));
+        var errorItems = request.Items.Select(ValidarItemNuevo).FirstOrDefault(e => e != null);
+        if (errorItems != null) return BadRequest(ApiResponse<object>.Fail("INVALID", errorItems));
+
         var school = await _schoolRepo.GetById(request.SchoolId);
         if (school == null) return BadRequest(ApiResponse<object>.Fail("NOT_FOUND", "Colegio no encontrado"));
 
@@ -748,8 +837,8 @@ public class ListsController : ControllerBase
             var supplyItem = new SupplyItem
             {
                 SupplyListId = listId,
-                NombreOriginal = item.NombreOriginal,
-                NombreDetectado = item.NombreOriginal,
+                NombreOriginal = item.NombreOriginal.Trim(),
+                NombreDetectado = item.NombreOriginal.Trim(),
                 Cantidad = item.Cantidad > 0 ? item.Cantidad : 1,
                 Notas = item.Notas,
                 CreatedAt = DateTime.UtcNow,

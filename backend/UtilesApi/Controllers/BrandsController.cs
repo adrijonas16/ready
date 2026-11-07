@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Dapper;
 using UtilesApi.DTOs;
+using UtilesApi.Infrastructure.Security;
 using UtilesApi.Infrastructure.Database;
 using UtilesApi.Services;
 
@@ -97,11 +98,16 @@ public class BrandsController : ControllerBase
 
     [HttpPost("{id}/logo")]
     [Authorize(Roles = AppRoles.Staff)]
+    [RequestSizeLimit(Archivos.MaxBytesSubida)]
+    [RequestFormLimits(MultipartBodyLengthLimit = Archivos.MaxBytesSubida)]
     public async Task<IActionResult> UploadLogo(Guid id, [FromForm] IFormFile file)
     {
         if (file == null) return BadRequest(ApiResponse<object>.Fail("NO_FILE", "Sube un logo"));
+        var info = await Archivos.Validar(file, Archivos.Imagenes);
+        if (info.Error != null) return BadRequest(ApiResponse<object>.Fail("INVALID_FILE", info.Error));
         var storage = HttpContext.RequestServices.GetRequiredService<UtilesApi.Infrastructure.Storage.IStorageService>();
-        var url = await storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+        await using var stream = file.OpenReadStream();
+        var url = await storage.UploadFileAsync(stream, info.NombreSeguro, info.ContentType);
         using var conn = _db.CreateConnection();
         await conn.ExecuteAsync("UPDATE brands SET logo_url = @Url WHERE id = @Id", new { Url = url, Id = id });
         return Ok(ApiResponse<string>.Ok(url));

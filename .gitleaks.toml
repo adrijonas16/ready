@@ -1,0 +1,50 @@
+# Configuración de gitleaks (https://github.com/gitleaks/gitleaks).
+# Usa todas las reglas por defecto y agrega las propias de este proyecto (.NET / appsettings / Render).
+title = "Ready - secretos"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "dotnet-jwt-key"
+description = "Jwt:Key con valor en appsettings*.json o Jwt__Key en archivos de entorno"
+regex = '''(?i)(?:"Key"\s*:\s*"([^"\s]{16,})"|Jwt__Key\s*[=:]\s*["']?([^\s"'<>]{16,}))'''
+keywords = ["key"]
+[rules.allowlist]
+regexes = ['''(?i)tu[-_ ]?clave|<[^>]*>|\$\{|example|changeme''']
+
+[[rules]]
+id = "connection-string-password"
+description = "Cadena de conexión con contraseña"
+regex = '''(?i)(?:Password|Pwd)\s*=\s*([^;"'\s<>.]{4,})'''
+keywords = ["password", "pwd"]
+[rules.allowlist]
+regexes = ['''(?i)Password\s*=\s*(\.\.\.|\*+|<[^>]*>|\$\{)''']
+
+[[rules]]
+id = "postgres-url-password"
+description = "URL postgres:// con usuario y contraseña"
+regex = '''postgres(?:ql)?://[^:\s/]+:([^@\s]{4,})@'''
+keywords = ["postgres"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Clave de API de Anthropic"
+regex = '''sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_\-]{20,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "r2-or-aws-secret-in-config"
+description = "SecretAccessKey / ApiToken / ClientSecret con valor en appsettings"
+regex = '''(?i)"(?:SecretAccessKey|AccessKeyId|ApiToken|ApiKey|ClientSecret)"\s*:\s*"([^"\s]{12,})"'''
+keywords = ["secretaccesskey", "accesskeyid", "apitoken", "apikey", "clientsecret"]
+[rules.allowlist]
+regexes = ['''(?i)YOUR_|example''']
+
+[allowlist]
+description = "Artefactos de compilación y dependencias"
+paths = [
+  '''(^|/)(bin|obj|node_modules|\.next)/''',
+  '''package-lock\.json$''',
+  '''\.tsbuildinfo$''',
+]

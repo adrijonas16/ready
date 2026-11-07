@@ -1,0 +1,5 @@
+# Hallazgos históricos ya tratados (no se reescribe el historial).
+# La Jwt:Key de este commit quedó publicada: debe rotarse (Jwt__Key en Render) y la API ya no arranca con ella.
+d0969f826e08dd2335b0836219bea9681d6bc3d6:backend/UtilesApi/appsettings.json:dotnet-jwt-key:13
+# Contraseña de la base local de Docker para desarrollo (no es la de producción).
+d0969f826e08dd2335b0836219bea9681d6bc3d6:backend/UtilesApi/appsettings.json:connection-string-password:10

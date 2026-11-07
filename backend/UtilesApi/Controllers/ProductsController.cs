@@ -193,9 +193,13 @@ public class ProductsController : ControllerBase
     private static string? Validar(ProductRequest r, bool creando)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return "Escribe el nombre del producto";
+        if (r.Name.Length > 200) return "El nombre puede tener hasta 200 caracteres";
         if (string.IsNullOrWhiteSpace(r.Category)) return "Elige una categoría";
         if (r.BasePrice < 0) return "El precio no puede ser negativo";
+        if (r.BasePrice > 100000) return "El precio es demasiado alto";
         if (r.Stock < 0) return "El stock no puede ser negativo";
+        if (!Validacion.Largo(r.Description, 5000)) return "La descripción puede tener hasta 5000 caracteres";
+        if (!Validacion.Largo(r.Attributes, 20000)) return "Los atributos son demasiado largos";
         if (r.Tier != null && !Tiers.Contains(r.Tier.Trim().ToLowerInvariant()))
             return "El nivel debe ser economico, medio o premium";
         if (!string.IsNullOrWhiteSpace(r.Attributes))

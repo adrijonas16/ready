@@ -7,6 +7,8 @@ using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
+using Microsoft.AspNetCore.RateLimiting;
+using UtilesApi.Infrastructure.Security;
 
 namespace UtilesApi.Controllers;
 
@@ -14,27 +16,50 @@ namespace UtilesApi.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
+    public const int MinPassword = 8;
+    public const int MaxPassword = 128;
+    public const int MinNombre = 2;
+    public const int MaxNombre = 100;
+
     private readonly IAuthService _authService;
     private readonly UserRepository _userRepo;
+    private readonly LoginGuard _loginGuard;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(IAuthService authService, UserRepository userRepo)
+    public AuthController(IAuthService authService, UserRepository userRepo, LoginGuard loginGuard, ILogger<AuthController> logger)
     {
         _authService = authService;
         _userRepo = userRepo;
+        _loginGuard = loginGuard;
+        _logger = logger;
+    }
+
+    private static string? ValidarNombre(string? nombre)
+    {
+        var n = nombre?.Trim() ?? "";
+        if (n.Length < MinNombre) return "Escribe tu nombre";
+        if (n.Length > MaxNombre) return $"El nombre puede tener hasta {MaxNombre} caracteres";
+        if (!Validacion.SinControl(n) || n.Contains('<') || n.Contains('>')) return "El nombre tiene caracteres no permitidos";
+        return null;
     }
 
     [HttpPost("register")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.Register)]
+    [Honeypot]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Register([FromBody] UserRegisterRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || !request.Email.Contains('@'))
-            return BadRequest(ApiResponse<AuthResponse>.Fail("INVALID_EMAIL", "Escribe un correo válido"));
-        if (string.IsNullOrEmpty(request.Password) || request.Password.Length < 6)
-            return BadRequest(ApiResponse<AuthResponse>.Fail("WEAK_PASSWORD", "La contraseña debe tener al menos 6 caracteres"));
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(ApiResponse<AuthResponse>.Fail("INVALID_NAME", "Escribe tu nombre"));
+        if (!Validacion.CorreoValido(request.Email))
+            return BadRequest(ApiResponse<AuthResponse>.Fail("INVALID_EMAIL", "Escribe un correo válido, por ejemplo nombre@correo.com"));
+        if (string.IsNullOrEmpty(request.Password) || request.Password.Length < MinPassword)
+            return BadRequest(ApiResponse<AuthResponse>.Fail("WEAK_PASSWORD", $"La contraseña debe tener al menos {MinPassword} caracteres"));
+        if (request.Password.Length > MaxPassword)
+            return BadRequest(ApiResponse<AuthResponse>.Fail("WEAK_PASSWORD", $"La contraseña puede tener hasta {MaxPassword} caracteres"));
+        var errorNombre = ValidarNombre(request.Name);
+        if (errorNombre != null)
+            return BadRequest(ApiResponse<AuthResponse>.Fail("INVALID_NAME", errorNombre));
 
-        var user = await _authService.Register(request.Email, request.Password, request.Name.Trim());
+        var user = await _authService.Register(request.Email.Trim(), request.Password, request.Name.Trim());
         if (user == null)
             return BadRequest(ApiResponse<AuthResponse>.Fail("EMAIL_EXISTS", "El email ya esta registrado"));
 
@@ -44,11 +69,34 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.Login)]
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Login([FromBody] UserLoginRequest request)
     {
-        var (user, token) = await _authService.Login(request.Email, request.Password);
+        // Datos absurdos: ni se consulta la base
+        if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 254 ||
+            string.IsNullOrEmpty(request.Password) || request.Password.Length > MaxPassword)
+            return Unauthorized(ApiResponse<AuthResponse>.Fail("INVALID_CREDENTIALS", "Correo o contraseña incorrectos"));
+
+        // Por correo: 10 intentos por minuto y bloqueo de 15 minutos tras 5 contraseñas incorrectas
+        var (permitido, esperar, bloqueado) = _loginGuard.Intentar(request.Email);
+        if (!permitido)
+        {
+            Response.Headers.RetryAfter = esperar.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var minutos = Math.Max(1, (int)Math.Ceiling(esperar / 60.0));
+            var mensaje = bloqueado
+                ? $"Demasiados intentos fallidos con este correo. Espera {minutos} minuto{(minutos == 1 ? "" : "s")} o restablece tu contraseña."
+                : RateLimits.MensajeLimite;
+            return StatusCode(StatusCodes.Status429TooManyRequests, ApiResponse<AuthResponse>.Fail("RATE_LIMIT", mensaje));
+        }
+
+        var (user, token) = await _authService.Login(request.Email.Trim(), request.Password);
         if (user == null)
-            return Unauthorized(ApiResponse<AuthResponse>.Fail("INVALID_CREDENTIALS", "Credenciales invalidas"));
+        {
+            _loginGuard.Fallo(request.Email);
+            _logger.LogInformation("Login fallido desde {Ip}", RateLimits.ClientIp(HttpContext));
+            return Unauthorized(ApiResponse<AuthResponse>.Fail("INVALID_CREDENTIALS", "Correo o contraseña incorrectos"));
+        }
+        _loginGuard.Exito(request.Email);
 
         return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse { Token = token, User = UserResponse.From(user) }));
     }
@@ -85,20 +133,24 @@ public class AuthController : ControllerBase
 
         if (request.Name != null)
         {
-            if (string.IsNullOrWhiteSpace(request.Name))
-                return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_NAME", "Escribe tu nombre"));
+            var errorNombre = ValidarNombre(request.Name);
+            if (errorNombre != null)
+                return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_NAME", errorNombre));
             user.Name = request.Name.Trim();
         }
 
         var phone = Limpio(request.Phone);
-        if (phone != null && !Validacion.TelefonoValido(phone))
-            return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_PHONE", "El teléfono debe tener al menos 6 dígitos"));
+        if (phone != null && Validacion.CelularPeru(phone) == null)
+            return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_PHONE", "Escribe un celular de 9 dígitos que empiece con 9 (puedes poner +51)"));
         var documento = Limpio(request.Documento);
-        if (documento != null && !Validacion.DocumentoValido(documento))
-            return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_DOCUMENT", "El DNI debe tener 8 dígitos o el RUC 11"));
+        if (documento != null && !Validacion.DniORucValido(documento))
+            return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_DOCUMENT", "Escribe un DNI de 8 dígitos o un RUC de 11"));
+        var direccion = Limpio(request.Address);
+        if (!Validacion.Largo(direccion, 300) || !Validacion.SinControl(direccion))
+            return BadRequest(ApiResponse<UserResponse>.Fail("INVALID_ADDRESS", "La dirección puede tener hasta 300 caracteres"));
 
         user.Phone = phone;
-        user.Address = Limpio(request.Address);
+        user.Address = direccion;
         user.Documento = documento;
         await _userRepo.Update(user);
 

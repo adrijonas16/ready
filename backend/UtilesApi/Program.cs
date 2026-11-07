@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using UtilesApi.Infrastructure.Database;
 using UtilesApi.Infrastructure.OCR;
@@ -8,12 +11,43 @@ using UtilesApi.Infrastructure.Storage;
 using UtilesApi.Services;
 using UtilesApi.Infrastructure.AI;
 using UtilesApi.DTOs;
+using UtilesApi.Infrastructure.Security;
 
 Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// Secretos locales (cadena de conexión, Jwt:Key, AI:ApiKey…) fuera de git: appsettings.Development.local.json.
+// En Render/producción todo llega por variables de entorno (ConnectionStrings__DefaultConnection, Jwt__Key, …).
+builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.local.json", optional: true, reloadOnChange: false);
+
+// Sin cabecera "Server" y con cuerpo pequeño por defecto (JSON). Las subidas de archivos
+// suben su propio límite con [RequestSizeLimit] (25 MB).
+builder.WebHost.ConfigureKestrel(o =>
+{
+    o.AddServerHeader = false;
+    o.Limits.MaxRequestBodySize = builder.Configuration.GetValue<long>("Limits:MaxRequestBodyBytes", 2 * 1024 * 1024);
+});
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = Archivos.MaxBytesSubida;
+    o.ValueLengthLimit = 64 * 1024;
+    o.ValueCountLimit = 200;
+});
+
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(o =>
+    {
+        // Errores de formato del cuerpo con el mismo { success, error } en español que el resto de la API
+        o.InvalidModelStateResponseFactory = ctx =>
+        {
+            var primero = ctx.ModelState.Where(e => e.Value?.Errors.Count > 0).Select(e => e.Key).FirstOrDefault();
+            var mensaje = string.IsNullOrEmpty(primero)
+                ? "Los datos enviados no son válidos"
+                : $"Los datos enviados no son válidos (revisa \"{primero.TrimStart('$', '.')}\")";
+            return new BadRequestObjectResult(ApiResponse.Fail("INVALID_REQUEST", mensaje));
+        };
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -54,7 +88,8 @@ if (string.IsNullOrWhiteSpace(aiOptions.ApiKey))
 builder.Services.AddSingleton(aiOptions);
 builder.Services.AddHttpClient<ClaudeListReader>(c => c.Timeout = TimeSpan.FromMinutes(8));
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "DefaultSecretKey123456789012345678901234";
+// Fuera de Development no arranca sin una Jwt:Key propia (falta, es corta o es la que estuvo en el repositorio)
+var jwtKey = JwtKeyGuard.Asegurar(builder.Configuration, builder.Environment);
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "UtilesApi";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "UtilesClient";
 
@@ -106,25 +141,12 @@ builder.Services.AddAuthentication(options =>
 });
 builder.Services.AddAuthorization();
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .WithExposedHeaders("X-Total-Count");
-    });
-});
+// HTTPS detrás del proxy de Render, HSTS, CORS con lista de orígenes (Cors__Origins) y límites de peticiones
+builder.Services.AddReadyHttpSecurity(builder.Configuration);
+builder.Services.AddReadyRateLimits(builder.Configuration);
+builder.Services.AddSingleton(_ => new LoginGuard());
 
 var app = builder.Build();
-
-// Con la clave por defecto (o la del repositorio) cualquiera puede firmar un token de ADMIN.
-if (!app.Environment.IsDevelopment() &&
-    (builder.Configuration["Jwt:Key"] is null || jwtKey == "UtilesPlatformSecretKey2024SuperSecure12345678901234567890"))
-{
-    app.Logger.LogCritical("Jwt:Key no está configurada o es la clave del repositorio. Define Jwt__Key con un valor secreto propio.");
-}
 
 using (var scope = app.Services.CreateScope())
 {
@@ -132,21 +154,72 @@ using (var scope = app.Services.CreateScope())
     dbInit.Initialize();
 }
 
+// 1. IP y esquema reales detrás del proxy (X-Forwarded-For / X-Forwarded-Proto; CF-Connecting-IP en Render)
+app.UseForwardedHeaders();
+app.UseClientIpFromCloudflare(builder.Configuration);
+
+// 2. Errores: en producción nunca se devuelve el detalle (stack trace), solo un JSON genérico
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler(errores => errores.Run(async ctx =>
+    {
+        var ex = ctx.Features.Get<IExceptionHandlerFeature>()?.Error;
+        if (ex is BadHttpRequestException bad)
+        {
+            ctx.Response.StatusCode = bad.StatusCode;
+            var mensaje = bad.StatusCode == StatusCodes.Status413PayloadTooLarge
+                ? "El envío es demasiado grande"
+                : "La petición no es válida";
+            await ctx.Response.WriteAsJsonAsync(ApiResponse.Fail(bad.StatusCode == 413 ? "PAYLOAD_TOO_LARGE" : "BAD_REQUEST", mensaje));
+            return;
+        }
+        ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await ctx.Response.WriteAsJsonAsync(ApiResponse.Fail("SERVER_ERROR", "Ocurrió un error inesperado. Inténtalo de nuevo en unos minutos."));
+    }));
+
+    // 3. HTTPS obligatorio (Render ya termina TLS; X-Forwarded-Proto dice si el cliente usó https).
+    //    /health queda fuera para que el chequeo interno de Render (http) reciba 200.
+    app.UseHsts();
+    app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/health"), rama => rama.UseHttpsRedirection());
+}
+
+// 4. Cabeceras de seguridad en todas las respuestas
+app.UseSecurityHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseCors("AllowAll");
+// Archivos subidos con Storage:Provider=local (en producción se usa R2 y se sirven desde su dominio)
+if (!string.Equals(storageProvider, "r2", StringComparison.OrdinalIgnoreCase))
+{
+    var carpeta = Path.GetFullPath(builder.Configuration["Storage:LocalPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads"));
+    Directory.CreateDirectory(carpeta);
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(carpeta),
+        RequestPath = "/uploads",
+        ServeUnknownFileTypes = false
+    });
+}
+
+app.UseRouting();
+app.UseCors(HttpSecurity.PoliticaCors);
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Chequeo de salud para Render (Health Check Path = /health)
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .AllowAnonymous()
+    .DisableRateLimiting()
+    .ExcludeFromDescription();
+
 app.MapControllers();
 app.MapHub<NotificationHub>("/hub/notifications");
-
-app.UseStaticFiles();
 
 app.Run();
 
