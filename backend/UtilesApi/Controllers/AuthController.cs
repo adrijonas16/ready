@@ -307,15 +307,34 @@ public class SchoolsController : ControllerBase
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
+    /// <summary>
+    /// Crea (o reutiliza) un grado del colegio. Abierto a cualquier sesión porque el cliente,
+    /// al subir su lista, elige su grado; si ya existe ese grado y año, devuelve el mismo id.
+    /// </summary>
     [HttpPost("{id}/grades")]
-    [Authorize(Roles = AppRoles.Staff)]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<Guid>>> CreateGrade(Guid id, [FromBody] CreateGradeRequest request)
     {
+        var nombre = (request.Name ?? "").Trim();
+        if (nombre.Length < 2 || nombre.Length > 100)
+            return BadRequest(ApiResponse<Guid>.Fail("VALIDATION", "El nombre del grado debe tener entre 2 y 100 caracteres"));
+        var anioActual = DateTime.UtcNow.Year;
+        if (request.Year < anioActual - 1 || request.Year > anioActual + 2)
+            return BadRequest(ApiResponse<Guid>.Fail("VALIDATION", "El año escolar no es válido"));
+
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        var colegio = await Dapper.SqlMapper.ExecuteScalarAsync<int>(conn, "SELECT COUNT(*) FROM schools WHERE id = @Id", new { Id = id });
+        if (colegio == 0) return NotFound(ApiResponse<Guid>.Fail("NOT_FOUND", "Colegio no encontrado"));
+        var existente = await Dapper.SqlMapper.ExecuteScalarAsync<Guid?>(conn,
+            "SELECT id FROM grades WHERE school_id = @Id AND lower(name) = lower(@Nombre) AND year = @Year LIMIT 1",
+            new { Id = id, Nombre = nombre, request.Year });
+        if (existente.HasValue) return Ok(ApiResponse<Guid>.Ok(existente.Value));
+
         var grade = new Core.Entities.Grade
         {
             Id = Guid.NewGuid(),
             SchoolId = id,
-            Name = request.Name,
+            Name = nombre,
             Year = request.Year,
             CreatedAt = DateTime.UtcNow
         };
