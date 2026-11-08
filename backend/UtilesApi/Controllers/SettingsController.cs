@@ -35,8 +35,21 @@ public class SettingsController : ControllerBase
             return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El monto para envío gratis no puede ser negativo"));
         if (request.DiasEntrega < 0 || request.DiasEntrega > 60)
             return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "Los días de entrega deben estar entre 0 y 60"));
+        if (request.CostoEnvio > 1000)
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El costo de envío debe estar entre 0 y 1000"));
+        if (request.EnvioGratisDesde is > 100000)
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El monto para envío gratis debe estar entre 0 y 100000"));
+        var whatsapp = new string((request.Whatsapp ?? "").Where(char.IsAsciiDigit).ToArray());
+        if (!string.IsNullOrWhiteSpace(request.Whatsapp) && (whatsapp.Length < 9 || whatsapp.Length > 15))
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El WhatsApp debe tener entre 9 y 15 dígitos (con código de país, ej. 51959000111)"));
+        if (!Validacion.Largo(request.Telefono, 30))
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El teléfono puede tener hasta 30 caracteres"));
+        if (!Validacion.Largo(request.HorarioEntrega, 200))
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El horario puede tener hasta 200 caracteres"));
+        if (!Validacion.Largo(request.Zonas, 2000))
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "Las zonas pueden tener hasta 2000 caracteres"));
 
-        request.Whatsapp = (request.Whatsapp ?? "").Trim();
+        request.Whatsapp = whatsapp;
         request.Telefono = (request.Telefono ?? "").Trim();
         request.HorarioEntrega = (request.HorarioEntrega ?? "").Trim();
         request.Zonas = string.IsNullOrWhiteSpace(request.Zonas) ? null : request.Zonas.Trim();

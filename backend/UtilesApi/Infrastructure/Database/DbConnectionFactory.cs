@@ -14,8 +14,12 @@ public class DbConnectionFactory : IDbConnectionFactory
 
     public DbConnectionFactory(IConfiguration configuration)
     {
-        _connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("Connection string not found");
+        var cadena = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(cadena))
+            throw new InvalidOperationException(
+                "Falta ConnectionStrings:DefaultConnection. Defínela con la variable de entorno ConnectionStrings__DefaultConnection " +
+                "o, en tu equipo, en appsettings.Development.local.json (ignorado por git).");
+        _connectionString = cadena;
     }
 
     public IDbConnection CreateConnection()

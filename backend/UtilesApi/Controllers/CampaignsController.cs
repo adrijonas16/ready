@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 using Dapper;
 using UtilesApi.DTOs;
+using UtilesApi.Infrastructure.Security;
 using UtilesApi.Infrastructure.Database;
 using UtilesApi.Services;
 
@@ -145,6 +146,12 @@ public class CampaignsController : ControllerBase
             ids = ids.Append(req.ProductId.Value).ToArray();
         if (ids.Length == 0)
             return BadRequest(ApiResponse<int>.Fail("NO_PRODUCTS", "Elige al menos un producto"));
+        if (ids.Length > 1000)
+            return BadRequest(ApiResponse<int>.Fail("TOO_MANY", "Máximo 1000 productos a la vez"));
+        if (req.CustomDiscountPercent is < 0 or > 100)
+            return BadRequest(ApiResponse<int>.Fail("INVALID_CAMPAIGN", "El descuento debe estar entre 0 y 100 %"));
+        if (req.CustomPrice is < 0)
+            return BadRequest(ApiResponse<int>.Fail("INVALID_CAMPAIGN", "El precio no puede ser negativo"));
 
         using var conn = _db.CreateConnection();
         var existe = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM campaigns WHERE id = @Id", new { Id = id });
@@ -174,6 +181,7 @@ public class CampaignsController : ControllerBase
     {
         if (percent is < 0 or > 100) return "El descuento debe estar entre 0 y 100 %";
         if (fixedAmount is < 0) return "El descuento fijo no puede ser negativo";
+        if (fixedAmount is > 100000) return "El descuento fijo es demasiado alto";
         return null;
     }
 
@@ -188,10 +196,15 @@ public class CampaignsController : ControllerBase
 
     [HttpPost("{id}/image")]
     [Authorize(Roles = AppRoles.Staff)]
+    [RequestSizeLimit(Archivos.MaxBytesSubida)]
+    [RequestFormLimits(MultipartBodyLengthLimit = Archivos.MaxBytesSubida)]
     public async Task<IActionResult> UploadImage(Guid id, [FromForm] IFormFile file)
     {
+        var info = await Archivos.Validar(file, Archivos.Imagenes);
+        if (info.Error != null) return BadRequest(ApiResponse<string>.Fail("INVALID_FILE", info.Error));
         var storage = HttpContext.RequestServices.GetRequiredService<UtilesApi.Infrastructure.Storage.IStorageService>();
-        var url = await storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+        await using var stream = file.OpenReadStream();
+        var url = await storage.UploadFileAsync(stream, info.NombreSeguro, info.ContentType);
         using var conn = _db.CreateConnection();
         await conn.ExecuteAsync("UPDATE campaigns SET image_url=@Url WHERE id=@Id", new { Url = url, Id = id });
         return Ok(ApiResponse<string>.Ok(url));
@@ -273,10 +286,15 @@ public class CampaignsController : ControllerBase
 
     [HttpPost("~/api/news/{id}/image")]
     [Authorize(Roles = AppRoles.Staff)]
+    [RequestSizeLimit(Archivos.MaxBytesSubida)]
+    [RequestFormLimits(MultipartBodyLengthLimit = Archivos.MaxBytesSubida)]
     public async Task<IActionResult> UploadNewsImage(Guid id, [FromForm] IFormFile file)
     {
+        var info = await Archivos.Validar(file, Archivos.Imagenes);
+        if (info.Error != null) return BadRequest(ApiResponse<string>.Fail("INVALID_FILE", info.Error));
         var storage = HttpContext.RequestServices.GetRequiredService<UtilesApi.Infrastructure.Storage.IStorageService>();
-        var url = await storage.UploadFileAsync(file.OpenReadStream(), file.FileName, file.ContentType);
+        await using var stream = file.OpenReadStream();
+        var url = await storage.UploadFileAsync(stream, info.NombreSeguro, info.ContentType);
         using var conn = _db.CreateConnection();
         await conn.ExecuteAsync("UPDATE news SET image_url=@Url WHERE id=@Id", new { Url = url, Id = id });
         return Ok(ApiResponse<string>.Ok(url));

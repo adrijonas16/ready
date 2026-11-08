@@ -1,0 +1,11 @@
+# Hallazgos históricos ya tratados (no se reescribe el historial). Solo huellas, nunca el secreto.
+# Jwt:Key que estuvo en appsettings.json (commits 3cc6c61 … 3cc1393): pública, debe rotarse (Jwt__Key en Render);
+# la API ya no arranca con ella.
+3cc6c616a312d2620907977c52e05c95ee8e1975:backend/UtilesApi/appsettings.json:dotnet-jwt-key:13
+d0969f826e08dd2335b0836219bea9681d6bc3d6:backend/UtilesApi/appsettings.json:dotnet-jwt-key:13
+# Contraseña de la base local de Docker para desarrollo (no es la de producción).
+3cc6c616a312d2620907977c52e05c95ee8e1975:backend/UtilesApi/appsettings.json:connection-string-password:10
+9190da28e94070ffd8744b1cca28d0d94aa75ac7:backend/UtilesApi/appsettings.json:connection-string-password:10
+d0969f826e08dd2335b0836219bea9681d6bc3d6:backend/UtilesApi/appsettings.json:connection-string-password:10
+# Ejemplo (marcador de posición) en el README de este commit.
+d5b218472293a8d0f64476b69422a39db36c9fd3:README.md:dotnet-jwt-key:79

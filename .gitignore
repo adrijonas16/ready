@@ -4,12 +4,35 @@ out/
 dist/
 build/
 .vercel/
-*.env.local
-.env
 .DS_Store
 *.log
+
+# Secretos y configuración local (nunca al repositorio)
+.env
+.env.*
+!.env.example
+*.env
+*.env.local
+appsettings.*.local.json
+appsettings.local.json
+secrets.json
+*.secrets.json
+secrets/
+*.pem
+*.key
+*.pfx
+*.p12
+gitleaks-report*.json
+
+# .NET
 backend/UtilesApi/bin/
 backend/UtilesApi/obj/
-backend/UtilesApi/utiles.db
-backend/UtilesApi/appsettings.Development.json
+**/bin/Debug/
+**/bin/Release/
+**/obj/
 backend/UtilesApi/uploads/
+
+# Bases locales
+*.db
+*.db-shm
+*.db-wal
