@@ -154,6 +154,20 @@ public class ListsController : ControllerBase
     [Honeypot]
     public async Task<ActionResult<ApiResponse<ListResponse>>> Upload([FromForm] List<IFormFile> files, [FromForm] Guid userId, [FromForm] Guid schoolId, [FromForm] Guid gradeId, [FromForm] int year, [FromForm] string? submittedBy)
     {
+        if (!Validacion.Largo(submittedBy, 100) || !Validacion.SinControl(submittedBy))
+            return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_NAME", "El nombre puede tener hasta 100 caracteres"));
+        if (await _schoolRepo.GetById(schoolId) == null)
+            return BadRequest(ApiResponse<ListResponse>.Fail("SCHOOL_NOT_FOUND", "Colegio no encontrado"));
+        // La lista es de quien tiene la sesión (el userId del formulario se ignora: no se puede subir a nombre de otro)
+        return await GuardarListaSubida(files, schoolId, gradeId, year, string.IsNullOrWhiteSpace(submittedBy) ? null : submittedBy.Trim(), User.GetUserId());
+    }
+
+    /// <summary>
+    /// Guarda una lista subida (fotos, PDF o Word), la manda a leer en segundo plano y avisa al panel.
+    /// La usan la subida de los clientes y la del colegio por su enlace (ColegioEnlaceController).
+    /// </summary>
+    private async Task<ActionResult<ApiResponse<ListResponse>>> GuardarListaSubida(List<IFormFile> files, Guid schoolId, Guid gradeId, int year, string? submittedBy, Guid? userId)
+    {
         if (files == null || files.Count == 0)
             return BadRequest(ApiResponse<ListResponse>.Fail("NO_FILE", "Debe subir al menos una imagen"));
 
@@ -161,10 +175,6 @@ public class ListsController : ControllerBase
             return BadRequest(ApiResponse<ListResponse>.Fail("TOO_MANY", $"Máximo {Archivos.MaxArchivosLista} archivos por lista"));
         if (year is < 2000 or > 2100)
             return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_YEAR", "Año inválido"));
-        if (!Validacion.Largo(submittedBy, 100) || !Validacion.SinControl(submittedBy))
-            return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_NAME", "El nombre puede tener hasta 100 caracteres"));
-        if (await _schoolRepo.GetById(schoolId) == null)
-            return BadRequest(ApiResponse<ListResponse>.Fail("SCHOOL_NOT_FOUND", "Colegio no encontrado"));
         var gradoElegido = await _gradeRepo.GetById(gradeId);
         if (gradoElegido == null || gradoElegido.SchoolId != schoolId)
             return BadRequest(ApiResponse<ListResponse>.Fail("GRADE_NOT_FOUND", "Elige un grado del colegio"));
@@ -188,8 +198,7 @@ public class ListsController : ControllerBase
         }
         var imageUrl = string.Join("|", imageUrls);
 
-        // La lista es de quien tiene la sesión (el userId del formulario se ignora: no se puede subir a nombre de otro)
-        Guid? validUserId = User.GetUserId();
+        Guid? validUserId = userId;
 
         var list = new SupplyList
         {
@@ -200,7 +209,7 @@ public class ListsController : ControllerBase
             ImageUrl = imageUrl,
             Estado = ListStatus.PENDIENTE_REVISION,
             EsOficial = false,
-            SubmittedBy = string.IsNullOrWhiteSpace(submittedBy) ? null : submittedBy.Trim(),
+            SubmittedBy = submittedBy,
             FechaSubida = DateTime.UtcNow,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -238,6 +247,72 @@ public class ListsController : ControllerBase
             FechaSubida = list.FechaSubida,
             CreatedAt = list.CreatedAt
         }));
+    }
+
+    /// <summary>Página pública del colegio (/colegio/{token}): su nombre, sus grados y lo que ya envió este año.</summary>
+    [HttpGet("~/api/colegio-enlace/{token}")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<ColegioEnlaceResponse>>> ColegioPorEnlace(string token)
+    {
+        var contacto = HttpContext.RequestServices.GetRequiredService<ContactoColegiosService>();
+        var c = await contacto.ObtenerPorToken(token);
+        if (c == null) return NotFound(ApiResponse<ColegioEnlaceResponse>.Fail("NOT_FOUND", "Este enlace no es válido. Pídenos uno nuevo por WhatsApp."));
+        var anio = ContactoColegiosService.AnioEscolar();
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        var grados = (await Dapper.SqlMapper.QueryAsync<string>(conn, @"
+            SELECT x.name FROM school_sections ss JOIN sections x ON x.id = ss.section_id
+            WHERE ss.school_id = @Id ORDER BY x.sort_order, x.name", new { c.Id })).ToList();
+        if (grados.Count == 0)
+            grados = (await Dapper.SqlMapper.QueryAsync<string>(conn, "SELECT name FROM sections ORDER BY sort_order, name")).ToList();
+        var enviados = (await Dapper.SqlMapper.QueryAsync<string>(conn, @"
+            SELECT DISTINCT g.name FROM supply_lists l JOIN grades g ON g.id = l.grade_id
+            WHERE l.school_id = @Id AND l.copia_de IS NULL AND l.year = @Anio AND (l.es_oficial OR l.submitted_by LIKE 'Colegio%')",
+            new { c.Id, Anio = anio })).ToList();
+        return Ok(ApiResponse<ColegioEnlaceResponse>.Ok(new ColegioEnlaceResponse { Nombre = c.Name, Anio = anio, Grados = grados, Enviados = enviados }));
+    }
+
+    /// <summary>
+    /// El colegio sube la lista de un grado por su enlace, sin cuenta. Queda para revisión del equipo
+    /// y el seguimiento del colegio pasa a "lista recibida".
+    /// </summary>
+    [HttpPost("~/api/colegio-enlace/{token}/lista")]
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.Upload)]
+    [RequestSizeLimit(Archivos.MaxBytesSubida)]
+    [RequestFormLimits(MultipartBodyLengthLimit = Archivos.MaxBytesSubida)]
+    [Honeypot]
+    public async Task<ActionResult<ApiResponse<ListResponse>>> SubirPorEnlace(string token, [FromForm] List<IFormFile> files, [FromForm] string? grado, [FromForm] string? nombre)
+    {
+        var contacto = HttpContext.RequestServices.GetRequiredService<ContactoColegiosService>();
+        var c = await contacto.ObtenerPorToken(token);
+        if (c == null) return NotFound(ApiResponse<ListResponse>.Fail("NOT_FOUND", "Este enlace no es válido. Pídenos uno nuevo por WhatsApp."));
+        var nombreGrado = grado?.Trim() ?? "";
+        if (nombreGrado.Length is < 2 or > 100 || !Validacion.SinControl(nombreGrado))
+            return BadRequest(ApiResponse<ListResponse>.Fail("VALIDATION", "Elige el grado"));
+        var quien = nombre?.Trim();
+        if (!Validacion.Largo(quien, 60) || !Validacion.SinControl(quien))
+            return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_NAME", "El nombre puede tener hasta 60 caracteres"));
+
+        // El grado del año escolar en curso (se crea si no existe, igual que al subir una lista)
+        var anio = ContactoColegiosService.AnioEscolar();
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        // Solo los grados de la tabla de niveles (los que ve el colegio en su página)
+        var gradoValido = await Dapper.SqlMapper.QueryFirstOrDefaultAsync<string>(conn,
+            "SELECT name FROM sections WHERE lower(name) = lower(@Nombre) LIMIT 1", new { Nombre = nombreGrado });
+        if (gradoValido == null)
+            return BadRequest(ApiResponse<ListResponse>.Fail("VALIDATION", "Elige el grado de la lista"));
+        nombreGrado = gradoValido;
+        var gradeId = await Dapper.SqlMapper.ExecuteScalarAsync<Guid?>(conn,
+            "SELECT id FROM grades WHERE school_id = @Id AND lower(name) = lower(@Nombre) AND year = @Anio LIMIT 1",
+            new { c.Id, Nombre = nombreGrado, Anio = anio })
+            ?? await _gradeRepo.Create(new Grade { Id = Guid.NewGuid(), SchoolId = c.Id, Name = nombreGrado, Year = anio, CreatedAt = DateTime.UtcNow });
+
+        var enviadoPor = string.IsNullOrWhiteSpace(quien) ? $"Colegio {c.Name}" : $"Colegio {c.Name} ({quien})";
+        if (enviadoPor.Length > 100) enviadoPor = enviadoPor[..100];
+        var resultado = await GuardarListaSubida(files, c.Id, gradeId, anio, enviadoPor, null);
+        if (resultado.Result is OkObjectResult)
+            await contacto.Registrar(c.Id, CanalesContacto.Enlace, true, "LISTA_SUBIDA", nombreGrado, null, EstadosContacto.ListaRecibida);
+        return resultado;
     }
 
     [HttpGet("{id}")]

@@ -357,6 +357,43 @@ public class DatabaseInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS ux_schools_codigo_modular ON schools(codigo_modular) WHERE codigo_modular IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_grades_school_year ON grades(school_id, year);
 
+            -- Contacto con los colegios para pedirles la lista de útiles (Admin > Pedir listas)
+            -- contacto_estado: SIN_CONTACTAR, CONTACTADO, RESPONDIO, LISTA_RECIBIDA o NO_INTERESADO
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS telefono VARCHAR(30);
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(20);
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS correo VARCHAR(150);
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS contacto_nombre VARCHAR(120);
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS contacto_notas TEXT;
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS contacto_estado VARCHAR(20) NOT NULL DEFAULT 'SIN_CONTACTAR';
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS ultimo_contacto_at TIMESTAMPTZ;
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS proximo_contacto_at TIMESTAMPTZ;
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS recordatorios INTEGER NOT NULL DEFAULT 0;
+            -- Enlace propio del colegio para subir sus listas sin cuenta (/colegio/{token})
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS enlace_token VARCHAR(40);
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_schools_enlace_token ON schools(enlace_token) WHERE enlace_token IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_schools_contacto ON schools(contacto_estado, proximo_contacto_at);
+
+            -- Historial de contactos: WhatsApp, correo o llamada, manual o automático
+            CREATE TABLE IF NOT EXISTS school_contact_log (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+                canal VARCHAR(20) NOT NULL,
+                automatico BOOLEAN NOT NULL DEFAULT FALSE,
+                resultado VARCHAR(30),
+                nota TEXT,
+                created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_school_contact_log_school ON school_contact_log(school_id, created_at DESC);
+
+            -- Mensaje y reglas para pedir las listas (una sola fila)
+            CREATE TABLE IF NOT EXISTS contacto_colegios_config (
+                id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                data JSONB NOT NULL DEFAULT '{}'::jsonb,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            INSERT INTO contacto_colegios_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
             -- Cargas de datos que se hacen una sola vez (para no volver a crear lo que el admin borró)
             CREATE TABLE IF NOT EXISTS seed_runs (
                 name VARCHAR(100) PRIMARY KEY,

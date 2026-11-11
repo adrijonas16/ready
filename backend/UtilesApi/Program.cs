@@ -66,6 +66,11 @@ builder.Services.AddScoped<AdditionalCostRepository>();
 builder.Services.AddScoped<SectionRepository>();
 builder.Services.AddScoped<CategoryRepository>();
 builder.Services.AddScoped<ConsultaRepository>();
+// Pedir listas a los colegios: correo (Resend, se activa con Email__ResendApiKey y Email__From) y recordatorios automáticos
+builder.Services.AddHttpClient<IEmailSender, ResendEmailSender>(c => c.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddScoped<ContactoColegiosService>();
+builder.Services.AddSingleton<RecordatoriosColegiosService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RecordatoriosColegiosService>());
 
 var storageProvider = builder.Configuration["Storage:Provider"] ?? "local";
 if (storageProvider == "r2")

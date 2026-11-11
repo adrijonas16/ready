@@ -400,3 +400,13 @@ public class ConsultaResponse
     public string? UserEmail { get; set; }
     public string? UserPhone { get; set; }
 }
+
+/// <summary>Lo que ve el colegio en su enlace para subir listas.</summary>
+public class ColegioEnlaceResponse
+{
+    public string Nombre { get; set; } = string.Empty;
+    public int Anio { get; set; }
+    public List<string> Grados { get; set; } = new();
+    /// <summary>Grados de los que el colegio ya envió (o ya tenemos) la lista este año.</summary>
+    public List<string> Enviados { get; set; } = new();
+}

@@ -88,6 +88,36 @@ Solo agrega lo que falta: no cambia ni borra colegios o grados existentes, y si 
 Para regenerarlo desde el Excel: `python3 scripts/generar_seed_colegios.py Colegios_Arequipa_ciudad_2026.xlsx`
 (y cambiar el nombre de la marca en `DatabaseInitializer` si debe volver a correr en bases que ya lo cargaron).
 
+## Pedir las listas a los colegios (Admin > Pedir listas)
+
+Cada colegio tiene sus datos de contacto (WhatsApp, teléfono, correo, nombre del contacto, notas) y un seguimiento:
+sin contactar → contactado → respondió → lista recibida (o no interesado), con la fecha del último contacto y del próximo
+recordatorio. Todo queda en `school_contact_log`.
+
+- **WhatsApp con un clic**: abre WhatsApp con el mensaje ya escrito (o el recordatorio) y anota el contacto.
+- **Correo**: por colegio o por lotes, y **recordatorios automáticos** cada hora a los que no respondieron
+  (cada N días, hasta un máximo; se configura en el panel). Se activa con estas variables en Railway:
+
+  ```bash
+  Email__ResendApiKey=re_...                 # clave de https://resend.com
+  Email__From=Ready <listas@tudominio.pe>    # remitente de un dominio verificado en Resend
+  Email__ReplyTo=ventas@tudominio.pe         # opcional
+  ```
+
+  Sin esas variables el panel funciona igual (WhatsApp y llamadas) y avisa que el correo no está activo.
+- **Llamadas**: botón para llamar, el mensaje como guion y dónde anotar el resultado.
+- **Enlace del colegio**: cada mensaje lleva `/colegio/{token}` (128 bits aleatorios), donde el colegio sube la lista
+  de cada grado sin crear cuenta. La lista entra a revisión y el colegio pasa a "lista recibida".
+  `App__WebUrl` define la dirección de la tienda para armar el enlace (por defecto `https://ready-web-gamma.vercel.app`).
+
+| Endpoint | Quién |
+|---|---|
+| `GET /api/contacto-colegios`, `PUT /api/contacto-colegios/{id}` | ADMIN/OPERATOR |
+| `POST /api/contacto-colegios/{id}/mensaje` (enlace y mensajes armados), `POST …/{id}/registro`, `GET …/{id}/historial` | ADMIN/OPERATOR |
+| `POST /api/contacto-colegios/correo` `{ ids, recordatorio }`, `POST /api/contacto-colegios/recordatorios` | ADMIN/OPERATOR (503 si el correo no está configurado) |
+| `GET/PUT /api/contacto-colegios/config` (mensaje, recordatorio, asunto, días, máximo, automático) | ADMIN/OPERATOR |
+| `GET /api/colegio-enlace/{token}`, `POST /api/colegio-enlace/{token}/lista` (multipart: `files`, `grado`, `nombre?`) | público (límite de subidas y anti-spam) |
+
 ## Poner la tienda en producción
 
 La API y su base PostgreSQL están en **Railway** (proyecto `ready`); la web, en **Vercel** (`ready-web` y `ready-web-rf43`).
