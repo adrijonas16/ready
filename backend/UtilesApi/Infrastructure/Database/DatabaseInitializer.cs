@@ -392,8 +392,13 @@ public class DatabaseInitializer
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
             INSERT INTO store_settings (id, data) VALUES (1,
-                '{""costoEnvio"": 8, ""envioGratisDesde"": 150, ""whatsapp"": ""51959000111"", ""telefono"": ""959 000 111"", ""horarioEntrega"": ""Lunes a sábado, 9:00 a 18:00"", ""diasEntrega"": 2}'::jsonb)
+                '{""costoEnvio"": 8, ""envioGratisDesde"": 150, ""whatsapp"": ""51951237582"", ""telefono"": ""951 237 582"", ""horarioEntrega"": ""Lunes a sábado, 9:00 a 18:00"", ""diasEntrega"": 2}'::jsonb)
             ON CONFLICT (id) DO NOTHING;
+
+            -- El número de ejemplo se reemplaza por el WhatsApp real de la tienda (solo si nadie lo cambió todavía)
+            UPDATE store_settings
+            SET data = data || '{""whatsapp"": ""51951237582"", ""telefono"": ""951 237 582""}'::jsonb, updated_at = NOW()
+            WHERE id = 1 AND data->>'whatsapp' = '51959000111';
         ";
 
         using var cmd = connection.CreateCommand();

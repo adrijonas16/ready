@@ -41,7 +41,7 @@ public class SettingsController : ControllerBase
             return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El monto para envío gratis debe estar entre 0 y 100000"));
         var whatsapp = new string((request.Whatsapp ?? "").Where(char.IsAsciiDigit).ToArray());
         if (!string.IsNullOrWhiteSpace(request.Whatsapp) && (whatsapp.Length < 9 || whatsapp.Length > 15))
-            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El WhatsApp debe tener entre 9 y 15 dígitos (con código de país, ej. 51959000111)"));
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El WhatsApp debe tener entre 9 y 15 dígitos (con código de país, ej. 51951237582)"));
         if (!Validacion.Largo(request.Telefono, 30))
             return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El teléfono puede tener hasta 30 caracteres"));
         if (!Validacion.Largo(request.HorarioEntrega, 200))
@@ -70,8 +70,8 @@ public static class StoreSettings
     {
         CostoEnvio = 8,
         EnvioGratisDesde = 150,
-        Whatsapp = "51959000111",
-        Telefono = "959 000 111",
+        Whatsapp = "51951237582",
+        Telefono = "951 237 582",
         HorarioEntrega = "Lunes a sábado, 9:00 a 18:00",
         DiasEntrega = 2
     };
