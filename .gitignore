@@ -36,3 +36,4 @@ backend/UtilesApi/uploads/
 *.db
 *.db-shm
 *.db-wal
+__pycache__/
