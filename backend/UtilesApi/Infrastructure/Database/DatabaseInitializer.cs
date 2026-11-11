@@ -502,6 +502,8 @@ public class DatabaseInitializer
         // Colegios del distrito de Arequipa con sus grados (padrón MINEDU). Una sola vez por base, y después
         // del catálogo de ejemplo (que asocia todos los niveles a sus 4 colegios de muestra, no a estos).
         CorrerUnaVez(connection, "colegios-arequipa-2026", "seed-colegios-arequipa.sql");
+        // Teléfonos y correos publicados de esos colegios (solo completa campos vacíos)
+        CorrerUnaVez(connection, "contactos-colegios-2026-11", "seed-contactos-colegios.sql");
     }
 
     /// <summary>

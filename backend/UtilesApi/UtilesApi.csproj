@@ -20,6 +20,7 @@
     <!-- Datos iniciales (catálogo, colegios y listas de ejemplo) que se cargan en una base nueva -->
     <EmbeddedResource Include="Infrastructure/Database/seed-catalogo.sql" LogicalName="seed-catalogo.sql" />
     <EmbeddedResource Include="Infrastructure/Database/seed-colegios-arequipa.sql" LogicalName="seed-colegios-arequipa.sql" />
+    <EmbeddedResource Include="Infrastructure/Database/seed-contactos-colegios.sql" LogicalName="seed-contactos-colegios.sql" />
   </ItemGroup>
 
 </Project>

@@ -85,6 +85,9 @@ cuando el padrón la tiene, la dirección y la ubicación.
 
 La API lo carga sola al arrancar, **una sola vez** por base (queda anotado en `seed_runs`), dentro de una transacción.
 Solo agrega lo que falta: no cambia ni borra colegios o grados existentes, y si el admin borra uno no vuelve a aparecer.
+Los teléfonos y correos publicados (Excel `Colegios_Arequipa_ciudad_2026_1.xlsx`) se cargan igual, una sola vez, con
+`seed-contactos-colegios.sql` (`scripts/generar_seed_contactos.py`): WhatsApp = primer celular, teléfono = primer fijo,
+los demás números en las notas; solo completa campos vacíos.
 Para regenerarlo desde el Excel: `python3 scripts/generar_seed_colegios.py Colegios_Arequipa_ciudad_2026.xlsx`
 (y cambiar el nombre de la marca en `DatabaseInitializer` si debe volver a correr en bases que ya lo cargaron).
 
