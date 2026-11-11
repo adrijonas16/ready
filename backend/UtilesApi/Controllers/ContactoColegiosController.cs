@@ -34,6 +34,9 @@ public class ContactoColegiosController : ControllerBase
         Nombre = c.Name,
         Direccion = c.Address,
         Gestion = c.Gestion,
+        Departamento = c.Departamento,
+        Provincia = c.Provincia,
+        Distrito = c.Distrito,
         Niveles = c.Niveles,
         Telefono = c.Telefono,
         Whatsapp = c.Whatsapp,
@@ -243,6 +246,9 @@ public class ColegioContactoResponse
     public string Nombre { get; set; } = string.Empty;
     public string? Direccion { get; set; }
     public string? Gestion { get; set; }
+    public string Departamento { get; set; } = Cobertura.Base;
+    public string? Provincia { get; set; }
+    public string? Distrito { get; set; }
     public string? Niveles { get; set; }
     public string? Telefono { get; set; }
     public string? Whatsapp { get; set; }

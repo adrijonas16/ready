@@ -156,8 +156,15 @@ public class ListsController : ControllerBase
     {
         if (!Validacion.Largo(submittedBy, 100) || !Validacion.SinControl(submittedBy))
             return BadRequest(ApiResponse<ListResponse>.Fail("INVALID_NAME", "El nombre puede tener hasta 100 caracteres"));
-        if (await _schoolRepo.GetById(schoolId) == null)
+        var colegio = await _schoolRepo.GetById(schoolId);
+        if (colegio == null)
             return BadRequest(ApiResponse<ListResponse>.Fail("SCHOOL_NOT_FOUND", "Colegio no encontrado"));
+        if (!User.IsInRole(AppRoles.Admin) && !User.IsInRole(AppRoles.Operator))
+        {
+            using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+            if (!Cobertura.Atiende(await StoreSettings.Leer(conn), colegio.Departamento))
+                return BadRequest(ApiResponse<ListResponse>.Fail("FUERA_DE_COBERTURA", $"Por ahora solo atendemos colegios de {Cobertura.Base}"));
+        }
         // La lista es de quien tiene la sesión (el userId del formulario se ignora: no se puede subir a nombre de otro)
         return await GuardarListaSubida(files, schoolId, gradeId, year, string.IsNullOrWhiteSpace(submittedBy) ? null : submittedBy.Trim(), User.GetUserId());
     }
@@ -410,7 +417,11 @@ public class ListsController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<IEnumerable<ListResponse>>>> GetOfficial([FromQuery] Guid? schoolId, [FromQuery] Guid? gradeId)
     {
-        var lists = await _listRepo.GetOfficialLists(schoolId, gradeId);
+        // Mientras el envío nacional esté apagado, la tienda solo muestra listas de colegios de Arequipa
+        string? departamento;
+        using (var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection())
+            departamento = (await StoreSettings.Leer(conn)).CoberturaNacional ? null : Cobertura.Base;
+        var lists = await _listRepo.GetOfficialLists(schoolId, gradeId, departamento);
         var result = new List<ListResponse>();
 
         foreach (var list in lists)

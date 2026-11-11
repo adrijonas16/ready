@@ -73,7 +73,8 @@ public class SupplyListRepository
         return await connection.QueryAsync<SupplyList>(sql, parameters);
     }
 
-    public async Task<IEnumerable<SupplyList>> GetOfficialLists(Guid? schoolId = null, Guid? gradeId = null)
+    /// <param name="departamento">Solo listas de colegios de ese departamento (null = todos).</param>
+    public async Task<IEnumerable<SupplyList>> GetOfficialLists(Guid? schoolId = null, Guid? gradeId = null, string? departamento = null)
     {
         using var connection = _db.CreateConnection();
         // Las copias personales de cada familia (copia_de) no son listas del colegio
@@ -89,6 +90,11 @@ public class SupplyListRepository
         {
             sql += " AND grade_id = @GradeId";
             parameters.Add("GradeId", gradeId.Value);
+        }
+        if (departamento != null)
+        {
+            sql += " AND school_id IN (SELECT id FROM schools WHERE departamento = @Departamento)";
+            parameters.Add("Departamento", departamento);
         }
 
         sql += " ORDER BY year DESC, created_at DESC";

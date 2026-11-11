@@ -108,7 +108,13 @@ public class OrdersController : ControllerBase
 
         var subtotal = Math.Round(items.Sum(x => x.UnitPrice * x.Quantity), 2);
         var settings = await StoreSettings.Leer(conn);
-        var costoEnvio = Math.Round(StoreSettings.CostoEnvio(settings, subtotal), 2);
+        // Sin departamento = Arequipa (la tienda empezó solo ahí). Fuera de Arequipa, solo con el envío nacional activo.
+        var departamento = string.IsNullOrWhiteSpace(request.ShippingDepartamento) ? Cobertura.Base : Cobertura.Normalizar(request.ShippingDepartamento);
+        if (departamento == null)
+            return BadRequest(ApiResponse<OrderResponse>.Fail("INVALID_ORDER", "Elige un departamento de entrega válido"));
+        if (!Cobertura.Atiende(settings, departamento))
+            return BadRequest(ApiResponse<OrderResponse>.Fail("FUERA_DE_COBERTURA", $"Por ahora solo entregamos en {Cobertura.Base}. Muy pronto llegaremos a {departamento}."));
+        var costoEnvio = Math.Round(StoreSettings.CostoEnvio(settings, subtotal, departamento), 2);
         var total = subtotal + costoEnvio;
 
         // Listas de útiles del pedido (varias si son de varios hijos). Solo se guardan las que existen.
@@ -142,9 +148,9 @@ public class OrdersController : ControllerBase
         using (var tx = conn.BeginTransaction())
         {
             await conn.ExecuteAsync(@"
-                INSERT INTO orders (id, user_id, supply_list_id, supply_list_ids, total, costo_envio, status, shipping_address, shipping_phone,
+                INSERT INTO orders (id, user_id, supply_list_id, supply_list_ids, total, costo_envio, status, shipping_address, shipping_departamento, shipping_phone,
                                     contact_notes, tracking_number, pago, entrega, comprobante)
-                VALUES (@Id, @UserId, @SupplyListId, @SupplyListIds, @Total, @CostoEnvio, @Status, @ShippingAddress, @ShippingPhone,
+                VALUES (@Id, @UserId, @SupplyListId, @SupplyListIds, @Total, @CostoEnvio, @Status, @ShippingAddress, @ShippingDepartamento, @ShippingPhone,
                         @ContactNotes, @TrackingNumber, @Pago::jsonb, @Entrega::jsonb, @Comprobante::jsonb)", new
             {
                 Id = orderId,
@@ -155,6 +161,7 @@ public class OrdersController : ControllerBase
                 CostoEnvio = costoEnvio,
                 Status = OrderStatus.RECIBIDO.ToString(),
                 ShippingAddress = request.ShippingAddress.Trim(),
+                ShippingDepartamento = departamento,
                 ShippingPhone = request.ShippingPhone.Trim(),
                 ContactNotes = Recortar(request.ContactNotes, 4000),
                 TrackingNumber = $"TRK-{Guid.NewGuid().ToString()[..8].ToUpper()}",
@@ -498,6 +505,7 @@ public class OrdersController : ControllerBase
                 Total = o.Total,
                 Status = o.Status.ToString(),
                 ShippingAddress = o.ShippingAddress,
+                ShippingDepartamento = o.ShippingDepartamento ?? Cobertura.Base,
                 ShippingPhone = o.ShippingPhone,
                 ContactNotes = o.ContactNotes,
                 TrackingNumber = o.TrackingNumber,

@@ -29,6 +29,9 @@ public class School
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Address { get; set; }
+    public string Departamento { get; set; } = "Arequipa";
+    public string? Provincia { get; set; }
+    public string? Distrito { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -177,6 +180,7 @@ public class Order
     public decimal Total { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.RECIBIDO;
     public string ShippingAddress { get; set; } = string.Empty;
+    public string? ShippingDepartamento { get; set; }
     public string ShippingPhone { get; set; } = string.Empty;
     public string? TrackingNumber { get; set; }
     public string? ContactNotes { get; set; }

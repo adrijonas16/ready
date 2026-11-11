@@ -19,8 +19,9 @@
   <ItemGroup>
     <!-- Datos iniciales (catálogo, colegios y listas de ejemplo) que se cargan en una base nueva -->
     <EmbeddedResource Include="Infrastructure/Database/seed-catalogo.sql" LogicalName="seed-catalogo.sql" />
-    <EmbeddedResource Include="Infrastructure/Database/seed-colegios-arequipa.sql" LogicalName="seed-colegios-arequipa.sql" />
-    <EmbeddedResource Include="Infrastructure/Database/seed-contactos-colegios.sql" LogicalName="seed-contactos-colegios.sql" />
+    <!-- Colegios y contactos por departamento: cada archivo se corre una sola vez (ver DatabaseInitializer) -->
+    <EmbeddedResource Include="Infrastructure/Database/seed-colegios-*.sql" LogicalName="%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Infrastructure/Database/seed-contactos-*.sql" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

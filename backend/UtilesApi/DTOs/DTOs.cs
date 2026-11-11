@@ -155,6 +155,8 @@ public class CreateOrderRequest
     public List<Guid>? SupplyListIds { get; set; }
     public List<OrderItemRequest> Items { get; set; } = new();
     public string ShippingAddress { get; set; } = string.Empty;
+    /// <summary>Departamento de entrega. Vacío = Arequipa (clientes de antes del envío nacional).</summary>
+    public string? ShippingDepartamento { get; set; }
     public string ShippingPhone { get; set; } = string.Empty;
     public string? ContactNotes { get; set; }
     public PagoDto? Pago { get; set; }
@@ -209,6 +211,7 @@ public class OrderResponse
     public decimal Total { get; set; }
     public string Status { get; set; } = string.Empty;
     public string ShippingAddress { get; set; } = string.Empty;
+    public string ShippingDepartamento { get; set; } = "Arequipa";
     public string ShippingPhone { get; set; } = string.Empty;
     public string? ContactNotes { get; set; }
     public string? TrackingNumber { get; set; }
@@ -244,6 +247,9 @@ public class SchoolResponse
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Address { get; set; }
+    public string Departamento { get; set; } = "Arequipa";
+    public string? Provincia { get; set; }
+    public string? Distrito { get; set; }
 }
 
 public class GradeResponse
@@ -278,6 +284,12 @@ public class StoreSettingsDto
     public string HorarioEntrega { get; set; } = string.Empty;
     public int DiasEntrega { get; set; }
     public string? Zonas { get; set; }
+    /// <summary>false = solo Arequipa (colegios y envíos). true = todo el Perú.</summary>
+    public bool CoberturaNacional { get; set; }
+    /// <summary>Envío fuera de Arequipa; null = el mismo costo que en Arequipa.</summary>
+    public decimal? CostoEnvioProvincias { get; set; }
+    /// <summary>Días hábiles de entrega fuera de Arequipa; null = los mismos que en Arequipa.</summary>
+    public int? DiasEntregaProvincias { get; set; }
 }
 
 public class UpdateProfileRequest

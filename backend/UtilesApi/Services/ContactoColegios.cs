@@ -30,7 +30,7 @@ public static class CanalesContacto
 public class ConfigContacto
 {
     public const string MensajePorDefecto =
-        "Buenos días, le saluda Ready, tienda de útiles escolares en Arequipa.\n\n" +
+        "Buenos días, le saluda Ready, tienda de útiles escolares con entrega a domicilio.\n\n" +
         "Queremos ayudar a las familias de {colegio} a conseguir su lista de útiles {anio} completa y a buen precio. " +
         "¿Nos podrían compartir la lista de útiles de cada grado?\n\n" +
         "Pueden subirla aquí, sin crear cuenta: {enlace}\n" +
@@ -73,6 +73,9 @@ public class ColegioContacto
     public string Name { get; set; } = string.Empty;
     public string? Address { get; set; }
     public string? Gestion { get; set; }
+    public string Departamento { get; set; } = Cobertura.Base;
+    public string? Provincia { get; set; }
+    public string? Distrito { get; set; }
     public string? Telefono { get; set; }
     public string? Whatsapp { get; set; }
     public string? Correo { get; set; }
@@ -133,6 +136,7 @@ public class ContactoColegiosService
 
     private const string SelectColegio = @"
         SELECT s.id AS Id, s.name AS Name, s.address AS Address, s.gestion AS Gestion,
+               s.departamento AS Departamento, s.provincia AS Provincia, s.distrito AS Distrito,
                s.telefono AS Telefono, s.whatsapp AS Whatsapp, s.correo AS Correo,
                s.contacto_nombre AS ContactoNombre, s.contacto_notas AS ContactoNotas, s.contacto_estado AS ContactoEstado,
                s.ultimo_contacto_at AS UltimoContactoAt, s.proximo_contacto_at AS ProximoContactoAt,
@@ -200,6 +204,7 @@ public class ContactoColegiosService
         .Replace("{colegio}", c.Name)
         .Replace("{enlace}", enlace)
         .Replace("{anio}", AnioEscolar().ToString())
+        .Replace("{departamento}", c.Departamento)
         .Replace("{contacto}", string.IsNullOrWhiteSpace(c.ContactoNombre) ? "equipo directivo" : c.ContactoNombre.Trim());
 
     /// <summary>

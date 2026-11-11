@@ -174,7 +174,7 @@ public class ClaudeListReader
     }
 
     private const string SystemPrompt = """
-        Eres el asistente de Ready, una tienda de útiles escolares en Arequipa, Perú.
+        Eres el asistente de Ready, una tienda de útiles escolares en Perú (con sede en Arequipa).
         Recibes la lista de útiles que pidió un colegio (fotos, PDF o texto) y la conviertes en un pedido
         usando SOLO productos del catálogo que se te entrega.
 

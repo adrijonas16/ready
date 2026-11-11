@@ -58,10 +58,13 @@ public class SchoolRepository
         _db = db;
     }
 
-    public async Task<IEnumerable<School>> GetAll()
+    /// <summary>Colegios, opcionalmente solo de un departamento.</summary>
+    public async Task<IEnumerable<School>> GetAll(string? departamento = null)
     {
         using var connection = _db.CreateConnection();
-        return await connection.QueryAsync<School>("SELECT * FROM schools ORDER BY name");
+        return await connection.QueryAsync<School>(
+            "SELECT * FROM schools WHERE @Departamento::text IS NULL OR departamento = @Departamento ORDER BY name",
+            new { Departamento = departamento });
     }
 
     public async Task<School?> GetById(Guid id)
@@ -72,6 +75,9 @@ public class SchoolRepository
                 id as Id,
                 name as Name,
                 address as Address,
+                departamento as Departamento,
+                provincia as Provincia,
+                distrito as Distrito,
                 created_at as CreatedAt
             FROM schools WHERE id = @Id", new { Id = id });
     }
@@ -80,7 +86,8 @@ public class SchoolRepository
     {
         using var connection = _db.CreateConnection();
         var id = await connection.ExecuteScalarAsync<Guid>(@"
-            INSERT INTO schools (name, address) VALUES (@Name, @Address) RETURNING id", school);
+            INSERT INTO schools (name, address, departamento, provincia, distrito)
+            VALUES (@Name, @Address, @Departamento, @Provincia, @Distrito) RETURNING id", school);
         return id;
     }
 }

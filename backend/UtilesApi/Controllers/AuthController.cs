@@ -202,17 +202,64 @@ public class SchoolsController : ControllerBase
         _sectionRepo = sectionRepo;
     }
 
+    /// <summary>
+    /// Colegios que ve la tienda: solo los de Arequipa mientras el envío nacional esté apagado.
+    /// El personal pide <c>?todos=true</c> (y opcionalmente <c>departamento</c>) para ver y contactar a todos.
+    /// </summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IEnumerable<SchoolResponse>>>> GetAll()
+    public async Task<ActionResult<ApiResponse<IEnumerable<SchoolResponse>>>> GetAll([FromQuery] string? departamento, [FromQuery] bool todos = false)
     {
-        var schools = await _schoolRepo.GetAll();
-        return Ok(ApiResponse<IEnumerable<SchoolResponse>>.Ok(schools.Select(s => new SchoolResponse
+        string? filtro = null;
+        if (!string.IsNullOrWhiteSpace(departamento))
         {
-            Id = s.Id,
-            Name = s.Name,
-            Address = s.Address
-        })));
+            filtro = Cobertura.Normalizar(departamento);
+            if (filtro == null)
+                return BadRequest(ApiResponse<IEnumerable<SchoolResponse>>.Fail("VALIDATION", "Departamento no válido"));
+        }
+
+        var esPersonal = todos && (User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Operator));
+        if (!esPersonal)
+        {
+            using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+            var ajustes = await StoreSettings.Leer(conn);
+            if (!ajustes.CoberturaNacional)
+            {
+                if (filtro != null && filtro != Cobertura.Base)
+                    return Ok(ApiResponse<IEnumerable<SchoolResponse>>.Ok(Array.Empty<SchoolResponse>()));
+                filtro = Cobertura.Base;
+            }
+        }
+
+        var schools = await _schoolRepo.GetAll(filtro);
+        return Ok(ApiResponse<IEnumerable<SchoolResponse>>.Ok(schools.Select(ARespuesta)));
     }
+
+    private static SchoolResponse ARespuesta(Core.Entities.School s) => new()
+    {
+        Id = s.Id,
+        Name = s.Name,
+        Address = s.Address,
+        Departamento = s.Departamento,
+        Provincia = s.Provincia,
+        Distrito = s.Distrito
+    };
+
+    /// <summary>Departamento válido (null = Arequipa) y largos de provincia/distrito.</summary>
+    private static string? ValidarUbicacion(CreateSchoolRequest r, out string departamento)
+    {
+        departamento = Cobertura.Base;
+        if (string.IsNullOrWhiteSpace(r.Name) || r.Name.Trim().Length > 255) return "Escribe el nombre del colegio (hasta 255 caracteres)";
+        if (!string.IsNullOrWhiteSpace(r.Departamento))
+        {
+            var d = Cobertura.Normalizar(r.Departamento);
+            if (d == null) return "Elige un departamento válido";
+            departamento = d;
+        }
+        if (!Validacion.Largo(r.Provincia, 80) || !Validacion.Largo(r.Distrito, 80)) return "La provincia y el distrito pueden tener hasta 80 caracteres";
+        return null;
+    }
+
+    private static string? Limpio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     [HttpGet("{id}")]
     public async Task<ActionResult<ApiResponse<SchoolResponse>>> GetById(Guid id)
@@ -221,12 +268,7 @@ public class SchoolsController : ControllerBase
         if (school == null)
             return NotFound(ApiResponse<SchoolResponse>.Fail("NOT_FOUND", "Colegio no encontrado"));
 
-        return Ok(ApiResponse<SchoolResponse>.Ok(new SchoolResponse
-        {
-            Id = school.Id,
-            Name = school.Name,
-            Address = school.Address
-        }));
+        return Ok(ApiResponse<SchoolResponse>.Ok(ARespuesta(school)));
     }
 
     [HttpGet("{id}/grades")]
@@ -246,11 +288,16 @@ public class SchoolsController : ControllerBase
     [Authorize(Roles = AppRoles.Staff)]
     public async Task<ActionResult<ApiResponse<Guid>>> Create([FromBody] CreateSchoolRequest request)
     {
+        var error = ValidarUbicacion(request, out var departamento);
+        if (error != null) return BadRequest(ApiResponse<Guid>.Fail("VALIDATION", error));
         var school = new Core.Entities.School
         {
             Id = Guid.NewGuid(),
-            Name = request.Name,
-            Address = request.Address,
+            Name = request.Name.Trim(),
+            Address = Limpio(request.Address),
+            Departamento = departamento,
+            Provincia = Limpio(request.Provincia),
+            Distrito = Limpio(request.Distrito),
             CreatedAt = DateTime.UtcNow
         };
 
@@ -262,9 +309,14 @@ public class SchoolsController : ControllerBase
     [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> UpdateSchool(Guid id, [FromBody] CreateSchoolRequest request)
     {
+        var error = ValidarUbicacion(request, out var departamento);
+        if (error != null) return BadRequest(ApiResponse<bool>.Fail("VALIDATION", error));
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
-        await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE schools SET name = @Name, address = @Address WHERE id = @Id",
-            new { Id = id, request.Name, request.Address });
+        await Dapper.SqlMapper.ExecuteAsync(conn, @"
+            UPDATE schools SET name = @Name, address = @Address, departamento = @Departamento, provincia = @Provincia, distrito = @Distrito
+            WHERE id = @Id",
+            new { Id = id, Name = request.Name.Trim(), Address = Limpio(request.Address), Departamento = departamento,
+                  Provincia = Limpio(request.Provincia), Distrito = Limpio(request.Distrito) });
         return Ok(ApiResponse<bool>.Ok(true));
     }
 
@@ -483,6 +535,10 @@ public class CreateSchoolRequest
 {
     public string Name { get; set; } = string.Empty;
     public string? Address { get; set; }
+    /// <summary>null = Arequipa</summary>
+    public string? Departamento { get; set; }
+    public string? Provincia { get; set; }
+    public string? Distrito { get; set; }
 }
 
 public class CreateGradeRequest

@@ -3,15 +3,20 @@
 Genera backend/UtilesApi/Infrastructure/Database/seed-contactos-colegios.sql con los teléfonos y correos publicados
 de los colegios (Excel "Colegios_Arequipa_ciudad_2026" con las columnas "Teléfono publicado" y "Correo publicado").
 
-Uso:  python3 scripts/generar_seed_contactos.py ruta/al/Colegios_Arequipa_ciudad_2026_1.xlsx
+Uso:  python3 scripts/generar_seed_contactos.py ruta/al/archivo.xlsx [--departamento Cusco]
+
+- Sin --departamento escribe seed-contactos-colegios.sql (Arequipa); con él, seed-contactos-<departamento>.sql,
+  que DatabaseInitializer corre una sola vez después de los colegios.
 
 - El colegio se reconoce por cualquiera de sus códigos modulares.
 - WhatsApp: el primer celular (9 dígitos que empiezan con 9). Teléfono: el primer fijo ("054 232540").
   Los demás números quedan en las notas.
 - Solo completa datos vacíos: no cambia lo que ya se editó en el panel.
 """
+import os
 import re
 import sys
+import unicodedata
 
 import openpyxl
 
@@ -50,7 +55,7 @@ def sql(v) -> str:
     return 'NULL' if v is None or v == '' else "'" + str(v).replace("'", "''") + "'"
 
 
-def main(ruta: str):
+def main(ruta: str, archivo: str = "seed-contactos-colegios.sql"):
     wb = openpyxl.load_workbook(ruta, data_only=True)
     filas, con_whatsapp, con_fijo, con_correo = [], 0, 0, 0
     for r in wb['Colegios EBR'].iter_rows(min_row=6, values_only=True):
@@ -79,9 +84,9 @@ def main(ruta: str):
         filas.append(f"  ({arr}, {sql(whatsapp)}, {sql(telefono)}, {sql(correo or None)}, {sql(notas)})")
 
     print(f'{len(filas)} sedes con contacto: {con_whatsapp} WhatsApp, {con_fijo} fijos, {con_correo} correos', file=sys.stderr)
-    contenido = f"""-- Generado por scripts/generar_seed_contactos.py desde Colegios_Arequipa_ciudad_2026_1.xlsx
+    contenido = f"""-- Generado por scripts/generar_seed_contactos.py desde {os.path.basename(ruta)}
 -- {len(filas)} sedes con contacto público: {con_whatsapp} WhatsApp, {con_fijo} teléfonos fijos y {con_correo} correos.
--- Lo corre DatabaseInitializer una sola vez (marca 'contactos-colegios-2026-11' en seed_runs).
+-- Lo corre DatabaseInitializer una sola vez (queda anotado en seed_runs).
 -- Solo completa campos vacíos: no cambia lo que ya se editó en Admin > Pedir listas.
 
 CREATE TEMP TABLE _contactos (codigos TEXT[], whatsapp VARCHAR(20), telefono VARCHAR(30), correo VARCHAR(150), notas TEXT) ON COMMIT DROP;
@@ -106,13 +111,27 @@ FROM (
 ) c
 WHERE s.id = c.id AND (c.whatsapp IS NOT NULL OR c.telefono IS NOT NULL OR c.correo IS NOT NULL);
 """
-    destino = 'backend/UtilesApi/Infrastructure/Database/seed-contactos-colegios.sql'
+    destino = f'backend/UtilesApi/Infrastructure/Database/{archivo}'
     with open(destino, 'w', encoding='utf-8') as f:
         f.write(contenido)
     print(f'Escrito {destino}', file=sys.stderr)
 
 
+def slug(texto: str) -> str:
+    t = unicodedata.normalize('NFD', texto.lower())
+    return re.sub(r'[^a-z0-9]+', '-', ''.join(c for c in t if unicodedata.category(c) != 'Mn')).strip('-')
+
+
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
+    args = sys.argv[1:]
+    archivo = 'seed-contactos-colegios.sql'
+    if '--departamento' in args:
+        i = args.index('--departamento')
+        if i + 1 >= len(args):
+            sys.exit(__doc__)
+        if args[i + 1].strip().lower() != 'arequipa':
+            archivo = f'seed-contactos-{slug(args[i + 1])}.sql'
+        del args[i:i + 2]
+    if len(args) != 1:
         sys.exit(__doc__)
-    main(sys.argv[1])
+    main(args[0], archivo)

@@ -91,6 +91,27 @@ los demás números en las notas; solo completa campos vacíos.
 Para regenerarlo desde el Excel: `python3 scripts/generar_seed_colegios.py Colegios_Arequipa_ciudad_2026.xlsx`
 (y cambiar el nombre de la marca en `DatabaseInitializer` si debe volver a correr en bases que ya lo cargaron).
 
+## Cobertura: Arequipa o todo el Perú
+
+La tienda vende **solo en Arequipa** hasta que en **Admin > Configuración > Dónde vendemos** se active
+**"Envíos a todo el Perú"** (`store_settings.coberturaNacional`). Mientras esté apagado:
+
+- `GET /api/schools` y `GET /api/lists/official` solo devuelven colegios de Arequipa (el panel pide `?todos=true`).
+- `POST /api/orders` rechaza entregas fuera de Arequipa (`FUERA_DE_COBERTURA`); el checkout no ofrece otro departamento.
+- Subir una lista para un colegio de otro departamento se rechaza (salvo el personal y el enlace propio del colegio).
+
+Se pueden cargar y contactar colegios de cualquier departamento desde ya (Admin > Colegios y Pedir listas tienen
+filtro por departamento). Al activarlo, el checkout pide el departamento y usa el costo y los días de envío
+"a otros departamentos" (vacíos = los mismos de Arequipa). Los pedidos guardan `shipping_departamento`.
+
+**Cargar colegios de otro departamento:** cada `Infrastructure/Database/seed-colegios-*.sql` se corre una sola vez al
+arrancar la API (queda en `seed_runs`).
+
+- Formato padrón MINEDU como el de Arequipa: `python3 scripts/generar_seed_colegios.py archivo.xlsx --departamento Cusco`
+- Formato por distrito con contactos (como Lima Metropolitana y Callao):
+  `python3 scripts/generar_seed_padron_distritos.py archivo.xlsx lima-callao-2026` — el departamento sale de cada
+  fila (Callao queda como departamento Callao) y un colegio es "nombre + distrito".
+
 ## Pedir las listas a los colegios (Admin > Pedir listas)
 
 Cada colegio tiene sus datos de contacto (WhatsApp, teléfono, correo, nombre del contacto, notas) y un seguimiento:

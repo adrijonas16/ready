@@ -373,6 +373,19 @@ public class DatabaseInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS ux_schools_enlace_token ON schools(enlace_token) WHERE enlace_token IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_schools_contacto ON schools(contacto_estado, proximo_contacto_at);
 
+            -- Cobertura por departamento: la tienda vende solo en Arequipa hasta activar ""Envíos a todo el Perú""
+            -- (store_settings.coberturaNacional). Los colegios de antes son todos de Arequipa.
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS departamento VARCHAR(40) NOT NULL DEFAULT 'Arequipa';
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS provincia VARCHAR(80);
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS distrito VARCHAR(80);
+            CREATE INDEX IF NOT EXISTS idx_schools_departamento ON schools(departamento);
+            -- Los del padrón MINEDU que cargamos primero son del distrito de Arequipa
+            UPDATE schools SET provincia = 'Arequipa', distrito = 'Arequipa'
+            WHERE departamento = 'Arequipa' AND provincia IS NULL AND codigo_modular IS NOT NULL;
+            ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_departamento VARCHAR(40);
+            -- Conteo de listas por colegio (Admin > Pedir listas, con miles de colegios)
+            CREATE INDEX IF NOT EXISTS idx_supply_lists_school ON supply_lists(school_id, year);
+
             -- Historial de contactos: WhatsApp, correo o llamada, manual o automático
             CREATE TABLE IF NOT EXISTS school_contact_log (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -504,6 +517,14 @@ public class DatabaseInitializer
         CorrerUnaVez(connection, "colegios-arequipa-2026", "seed-colegios-arequipa.sql");
         // Teléfonos y correos publicados de esos colegios (solo completa campos vacíos)
         CorrerUnaVez(connection, "contactos-colegios-2026-11", "seed-contactos-colegios.sql");
+
+        // Los demás departamentos (scripts/generar_seed_colegios.py --departamento ...): primero los colegios,
+        // después sus contactos. Cada archivo se corre una vez; para recargar uno, se genera con otro nombre.
+        var recursos = typeof(DatabaseInitializer).Assembly.GetManifestResourceNames();
+        foreach (var prefijo in new[] { "seed-colegios-", "seed-contactos-" })
+            foreach (var recurso in recursos.Where(r => r.StartsWith(prefijo) && r.EndsWith(".sql")
+                         && r is not "seed-colegios-arequipa.sql" and not "seed-contactos-colegios.sql").OrderBy(r => r, StringComparer.Ordinal))
+                CorrerUnaVez(connection, recurso[..^4], recurso);
     }
 
     /// <summary>

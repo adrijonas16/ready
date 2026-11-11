@@ -46,6 +46,10 @@ public class SettingsController : ControllerBase
             return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El teléfono puede tener hasta 30 caracteres"));
         if (!Validacion.Largo(request.HorarioEntrega, 200))
             return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El horario puede tener hasta 200 caracteres"));
+        if (request.CostoEnvioProvincias is < 0 or > 1000)
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "El costo de envío a provincias debe estar entre 0 y 1000"));
+        if (request.DiasEntregaProvincias is < 0 or > 60)
+            return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "Los días de entrega a provincias deben estar entre 0 y 60"));
         if (!Validacion.Largo(request.Zonas, 2000))
             return BadRequest(ApiResponse<StoreSettingsDto>.Fail("INVALID_SETTINGS", "Las zonas pueden tener hasta 2000 caracteres"));
 
@@ -82,7 +86,14 @@ public static class StoreSettings
         return Validacion.Leer<StoreSettingsDto>(json) ?? PorDefecto();
     }
 
-    /// <summary>Costo de envío para un subtotal: gratis si llega a envioGratisDesde.</summary>
-    public static decimal CostoEnvio(StoreSettingsDto s, decimal subtotal) =>
-        s.EnvioGratisDesde.HasValue && subtotal >= s.EnvioGratisDesde.Value ? 0 : Math.Max(0, s.CostoEnvio);
+    /// <summary>
+    /// Costo de envío para un subtotal: gratis si llega a envioGratisDesde. Fuera de Arequipa usa
+    /// costoEnvioProvincias (si está configurado).
+    /// </summary>
+    public static decimal CostoEnvio(StoreSettingsDto s, decimal subtotal, string? departamento = null)
+    {
+        if (s.EnvioGratisDesde.HasValue && subtotal >= s.EnvioGratisDesde.Value) return 0;
+        var provincia = (Cobertura.Normalizar(departamento) ?? Cobertura.Base) != Cobertura.Base;
+        return Math.Max(0, provincia && s.CostoEnvioProvincias.HasValue ? s.CostoEnvioProvincias.Value : s.CostoEnvio);
+    }
 }

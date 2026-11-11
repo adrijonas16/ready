@@ -35,6 +35,16 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
     o.ValueCountLimit = 200;
 });
 
+// JSON comprimido: con miles de colegios, la lista pesa ~10 veces menos (brotli/gzip según el navegador)
+builder.Services.AddResponseCompression(o =>
+{
+    o.EnableForHttps = true;
+    o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+});
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+
 builder.Services.AddControllers()
     .ConfigureApiBehaviorOptions(o =>
     {
@@ -191,6 +201,7 @@ if (!app.Environment.IsDevelopment())
 
 // 4. Cabeceras de seguridad en todas las respuestas
 app.UseSecurityHeaders();
+app.UseResponseCompression();
 
 if (app.Environment.IsDevelopment())
 {
