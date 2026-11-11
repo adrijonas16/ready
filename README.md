@@ -90,22 +90,29 @@ Para regenerarlo desde el Excel: `python3 scripts/generar_seed_colegios.py Coleg
 
 ## Poner la tienda en producción
 
+La API y su base PostgreSQL están en **Railway** (proyecto `ready`); la web, en **Vercel** (`ready-web` y `ready-web-rf43`).
 La API crea sola todas las tablas al arrancar y, si la base está vacía, carga el catálogo
-(69 productos en soles), 4 colegios de ejemplo y 5 listas oficiales ya aprobadas.
-Ese catálogo sale de `Infrastructure/Database/seed-catalogo.sql`, generado desde
+(69 productos en soles), 4 colegios de ejemplo y 5 listas oficiales ya aprobadas, más los colegios del padrón
+(ver más abajo). El catálogo sale de `Infrastructure/Database/seed-catalogo.sql`, generado desde
 `ready-web/src/demo/catalogo.ts`, así que coincide con la tienda de demostración.
-Solo hace falta una base PostgreSQL vacía (Supabase, Railway, Neon…).
 
-Variables en Render (Environment). **Ningún secreto va en `appsettings.json`**: ahí quedan vacíos.
+> La base anterior era una base gratis de Render; Render las borra a los 30 días y se perdió. No uses bases gratis que vencen.
+
+Servicio de la API en Railway: repo `adrijonas16/ready`, rama `master`, *Root Directory* `/backend/UtilesApi` (Dockerfile),
+*Healthcheck Path* `/health`, un volumen montado en `/data` para las imágenes subidas. Variables
+(**ningún secreto va en `appsettings.json`**):
 
 ```bash
-ConnectionStrings__DefaultConnection=Host=...;Port=5432;Database=postgres;Username=...;Password=...;SSL Mode=Require;Trust Server Certificate=true
-Jwt__Key=<secreto aleatorio de 32+ caracteres: openssl rand -base64 48>
-Cors__Origins=https://ready-web-gamma.vercel.app,https://ready-web-rf43.vercel.app   # dominios del frontend, separados por comas
-Admin__Email=tu-correo@dominio.com   # quien se registre con este correo entra como administrador
-Storage__Provider=r2                 # o local; con r2: R2__AccountId, R2__AccessKeyId, R2__SecretAccessKey, R2__PublicUrl
-AI__ApiKey=sk-ant-...                # sin esto, las listas subidas quedan en revisión manual
-ASPNETCORE_ENVIRONMENT=Production    # es el valor por defecto; Swagger solo existe en Development
+DATABASE_URL=${{Postgres.DATABASE_URL}}   # referencia a la base del mismo proyecto (también vale ConnectionStrings__DefaultConnection)
+Jwt__Key=${{secret(64)}}                  # Railway la genera; cambiarla cierra todas las sesiones
+Admin__Email=adrijonas16@gmail.com        # quien se registre con este correo entra como administrador
+ASPNETCORE_ENVIRONMENT=Production         # Swagger solo existe en Development
+PORT=10000
+Storage__Provider=local                   # o r2: R2__AccountId, R2__AccessKeyId, R2__SecretAccessKey, R2__PublicUrl
+Storage__LocalPath=/data/uploads
+Storage__BaseUrl=https://${{RAILWAY_PUBLIC_DOMAIN}}/uploads
+AI__ApiKey=sk-ant-...                     # opcional: sin esto, las listas subidas quedan en revisión manual
+Cors__Origins=...                         # opcional: por defecto los dos dominios de Vercel y localhost
 ```
 
 En tu equipo, los secretos van en `backend/UtilesApi/appsettings.Development.local.json` (git lo ignora), por ejemplo:
@@ -117,11 +124,11 @@ En tu equipo, los secretos van en `backend/UtilesApi/appsettings.Development.loc
 
 En Development, si falta `Jwt:Key`, la API usa una clave aleatoria temporal (las sesiones se pierden al reiniciar).
 
-En Vercel (proyecto `ready-web`):
+En Vercel (proyectos `ready-web` y `ready-web-rf43`):
 
 ```bash
-NEXT_PUBLIC_MODO_DEMO=false
-NEXT_PUBLIC_API_URL=https://<tu-servicio>.onrender.com/api
+NEXT_PUBLIC_MODO_DEMO=false   # sin esto la web funciona en modo demo (todo en el navegador, sin API)
+NEXT_PUBLIC_API_URL=https://ready-production-42f8ecea.up.railway.app/api
 ```
 
 Los pagos siguen siendo de prueba: la tienda no está conectada a una pasarela real.
@@ -145,8 +152,8 @@ Los pagos siguen siendo de prueba: la tienda no está conectada a una pasarela r
 
 ### Lanzamiento: HTTPS, CORS, límites y anti-spam
 
-**Rotar `Jwt__Key`.** La clave que estuvo en `appsettings.json` es pública (historial de git). Genera una nueva
-(`openssl rand -base64 48`), guárdala en Render y vuelve a desplegar. Todas las sesiones abiertas se cierran
+**Rotar `Jwt__Key`.** La clave que estuvo en `appsettings.json` es pública (historial de git); en Railway se usa una
+generada (`${{secret(64)}}`). Para rotarla, cámbiala en Railway y vuelve a desplegar. Todas las sesiones abiertas se cierran
 (los usuarios vuelven a iniciar sesión). Para rotarla otra vez más adelante, basta cambiar la variable.
 
 **HTTPS.** Render termina TLS y pasa `X-Forwarded-Proto`/`X-Forwarded-For`; la API los lee
