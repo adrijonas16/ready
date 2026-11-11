@@ -75,6 +75,19 @@ Cada consulta nueva avisa al panel (SignalR `NewInquiry`). Se responde en Admin 
 **Descripción de las opciones.** `product_variant_values.description` (hasta 1000 caracteres) se edita en
 Admin > Productos > Variantes y se muestra en la ficha del producto al elegir esa opción.
 
+## Colegios de Arequipa (padrón MINEDU)
+
+`Infrastructure/Database/seed-colegios-arequipa.sql` trae los 187 colegios de educación básica regular del distrito de
+Arequipa (padrón del MINEDU, enero de 2026) con un grado por cada nivel que ofrecen: inicial de 3, 4 y 5 años,
+1.º a 6.º de primaria y 1.º a 5.º de secundaria (1580 grados, del año escolar en curso). Las sedes con el mismo nombre
+(p. ej. De La Salle primaria y secundaria) quedan como un solo colegio. Se guarda el código modular, la gestión y,
+cuando el padrón la tiene, la dirección y la ubicación.
+
+La API lo carga sola al arrancar, **una sola vez** por base (queda anotado en `seed_runs`), dentro de una transacción.
+Solo agrega lo que falta: no cambia ni borra colegios o grados existentes, y si el admin borra uno no vuelve a aparecer.
+Para regenerarlo desde el Excel: `python3 scripts/generar_seed_colegios.py Colegios_Arequipa_ciudad_2026.xlsx`
+(y cambiar el nombre de la marca en `DatabaseInitializer` si debe volver a correr en bases que ya lo cargaron).
+
 ## Poner la tienda en producción
 
 La API crea sola todas las tablas al arrancar y, si la base está vacía, carga el catálogo

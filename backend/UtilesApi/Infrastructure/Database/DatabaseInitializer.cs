@@ -348,6 +348,21 @@ public class DatabaseInitializer
                                                    WHEN '3' THEN 'EN_CAMINO' WHEN '4' THEN 'ENTREGADO' WHEN '5' THEN 'CANCELADO' END
             WHERE status IN ('0', '1', '2', '3', '4', '5');
 
+            -- Datos del padrón del MINEDU para los colegios (código modular, gestión y ubicación)
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS codigo_modular VARCHAR(10);
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS codigos_modulares TEXT;
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS gestion VARCHAR(80);
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS latitud DOUBLE PRECISION;
+            ALTER TABLE schools ADD COLUMN IF NOT EXISTS longitud DOUBLE PRECISION;
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_schools_codigo_modular ON schools(codigo_modular) WHERE codigo_modular IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_grades_school_year ON grades(school_id, year);
+
+            -- Cargas de datos que se hacen una sola vez (para no volver a crear lo que el admin borró)
+            CREATE TABLE IF NOT EXISTS seed_runs (
+                name VARCHAR(100) PRIMARY KEY,
+                ran_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
             -- Descripción propia de cada opción de un producto (p. ej. qué trae el diseño, medidas del color)
             ALTER TABLE product_variant_values ADD COLUMN IF NOT EXISTS description TEXT;
 
@@ -417,18 +432,66 @@ public class DatabaseInitializer
             secCmd.ExecuteNonQuery();
         }
 
+        // Inicial de 3 años (los colegios del padrón la tienen); en bases anteriores no existía
+        using (var tres = connection.CreateCommand())
+        {
+            tres.CommandText = @"
+                INSERT INTO sections (group_name, name, sort_order)
+                SELECT 'Inicial', 'Inicial - 3 años', 0
+                WHERE NOT EXISTS (SELECT 1 FROM sections WHERE name = 'Inicial - 3 años')";
+            tres.ExecuteNonQuery();
+        }
+
         // Catálogo, colegios y listas de ejemplo (Arequipa, en soles). Solo si aún no hay productos fuera de los servicios.
         // El SQL se genera desde ready-web/src/demo/catalogo.ts, así la base nueva coincide con la tienda de demostración.
         using var checkCmd = connection.CreateCommand();
         checkCmd.CommandText = "SELECT COUNT(*) FROM products WHERE category <> 'Servicios'";
         var count = Convert.ToInt64(checkCmd.ExecuteScalar());
-        if (count > 0) return;
+        if (count == 0)
+        {
+            using var stream = typeof(DatabaseInitializer).Assembly.GetManifestResourceStream("seed-catalogo.sql")
+                ?? throw new InvalidOperationException("No se encontró seed-catalogo.sql dentro del ensamblado");
+            using var lector = new StreamReader(stream);
+            using var seedCmd = connection.CreateCommand();
+            seedCmd.CommandText = lector.ReadToEnd();
+            seedCmd.ExecuteNonQuery();
+        }
 
-        using var stream = typeof(DatabaseInitializer).Assembly.GetManifestResourceStream("seed-catalogo.sql")
-            ?? throw new InvalidOperationException("No se encontró seed-catalogo.sql dentro del ensamblado");
+        // Colegios del distrito de Arequipa con sus grados (padrón MINEDU). Una sola vez por base, y después
+        // del catálogo de ejemplo (que asocia todos los niveles a sus 4 colegios de muestra, no a estos).
+        CorrerUnaVez(connection, "colegios-arequipa-2026", "seed-colegios-arequipa.sql");
+    }
+
+    /// <summary>
+    /// Corre un SQL embebido una sola vez (queda anotado en seed_runs), dentro de una transacción:
+    /// si falla, no queda nada a medias y se vuelve a intentar en el próximo arranque.
+    /// </summary>
+    private static void CorrerUnaVez(IDbConnection connection, string nombre, string recurso)
+    {
+        using (var ya = connection.CreateCommand())
+        {
+            ya.CommandText = "SELECT COUNT(*) FROM seed_runs WHERE name = @n";
+            var p = ya.CreateParameter(); p.ParameterName = "n"; p.Value = nombre; ya.Parameters.Add(p);
+            if (Convert.ToInt64(ya.ExecuteScalar()) > 0) return;
+        }
+
+        using var stream = typeof(DatabaseInitializer).Assembly.GetManifestResourceStream(recurso)
+            ?? throw new InvalidOperationException($"No se encontró {recurso} dentro del ensamblado");
         using var lector = new StreamReader(stream);
-        using var seedCmd = connection.CreateCommand();
-        seedCmd.CommandText = lector.ReadToEnd();
-        seedCmd.ExecuteNonQuery();
+        using var tx = connection.BeginTransaction();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = lector.ReadToEnd();
+            cmd.ExecuteNonQuery();
+        }
+        using (var marca = connection.CreateCommand())
+        {
+            marca.Transaction = tx;
+            marca.CommandText = "INSERT INTO seed_runs (name) VALUES (@n)";
+            var p = marca.CreateParameter(); p.ParameterName = "n"; p.Value = nombre; marca.Parameters.Add(p);
+            marca.ExecuteNonQuery();
+        }
+        tx.Commit();
     }
 }
