@@ -18,7 +18,7 @@ Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 var builder = WebApplication.CreateBuilder(args);
 
 // Secretos locales (cadena de conexión, Jwt:Key, AI:ApiKey…) fuera de git: appsettings.Development.local.json.
-// En Render/producción todo llega por variables de entorno (ConnectionStrings__DefaultConnection, Jwt__Key, …).
+// En producción (Railway) todo llega por variables de entorno (DATABASE_URL o ConnectionStrings__DefaultConnection, Jwt__Key, …).
 builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.local.json", optional: true, reloadOnChange: false);
 
 // Sin cabecera "Server" y con cuerpo pequeño por defecto (JSON). Las subidas de archivos
