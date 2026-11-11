@@ -364,6 +364,29 @@ public class ListsController : ControllerBase
     [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> DeleteList(Guid id)
     {
+        await BorrarLista(id);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    /// <summary>
+    /// El cliente borra una copia suya (p. ej. la de un hijo que ya no la necesita).
+    /// Solo copias: la lista del colegio y las listas subidas no se borran desde aquí.
+    /// Los pedidos ya hechos no se tocan; solo pierden la referencia a la lista.
+    /// </summary>
+    [HttpDelete("{id}/copia")]
+    [AllowAnonymous]
+    public async Task<IActionResult> DeleteCopia(Guid id)
+    {
+        var list = await _listRepo.GetById(id);
+        if (list == null) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Lista no encontrada"));
+        if (list.CopiaDe == null) return BadRequest(ApiResponse<bool>.Fail("NOT_A_COPY", "Solo se pueden borrar las copias propias"));
+        if (!PuedeEditar(list)) return SinPermiso<bool>();
+        await BorrarLista(id);
+        return Ok(ApiResponse<bool>.Ok(true));
+    }
+
+    private async Task BorrarLista(Guid id)
+    {
         using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
         conn.Open();
         using var tx = conn.BeginTransaction();
@@ -372,7 +395,6 @@ public class ListsController : ControllerBase
         await Dapper.SqlMapper.ExecuteAsync(conn, "UPDATE supply_lists SET copia_de = NULL WHERE copia_de = @Id", new { Id = id }, tx);
         await Dapper.SqlMapper.ExecuteAsync(conn, "DELETE FROM supply_items WHERE supply_list_id = @Id; DELETE FROM supply_lists WHERE id = @Id", new { Id = id }, tx);
         tx.Commit();
-        return Ok(ApiResponse<bool>.Ok(true));
     }
 
     private static readonly ListStatus[] EstadosRevision =

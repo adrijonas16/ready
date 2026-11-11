@@ -74,7 +74,7 @@ public class ProductsController : ControllerBase
         foreach (var vt in variantTypes)
         {
             var values = await Dapper.SqlMapper.QueryAsync<dynamic>(conn, @"
-                SELECT id, value, image_url, price_modifier, stock, display_order, is_active, color_hex
+                SELECT id, value, image_url, price_modifier, stock, display_order, is_active, color_hex, description
                 FROM product_variant_values WHERE variant_type_id = @TypeId ORDER BY display_order",
                 new { TypeId = (Guid)vt.id });
             variants.Add(new { id = vt.id, name = vt.name, displayOrder = vt.display_order, values });

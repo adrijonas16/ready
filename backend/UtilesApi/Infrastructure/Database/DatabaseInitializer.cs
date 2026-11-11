@@ -348,6 +348,28 @@ public class DatabaseInitializer
                                                    WHEN '3' THEN 'EN_CAMINO' WHEN '4' THEN 'ENTREGADO' WHEN '5' THEN 'CANCELADO' END
             WHERE status IN ('0', '1', '2', '3', '4', '5');
 
+            -- Descripción propia de cada opción de un producto (p. ej. qué trae el diseño, medidas del color)
+            ALTER TABLE product_variant_values ADD COLUMN IF NOT EXISTS description TEXT;
+
+            -- Consultas de producto: el cliente pregunta por algo que no está en la tienda y se le responde en 24 h
+            -- estado: PENDIENTE, DISPONIBLE (sí lo conseguimos) o NO_DISPONIBLE
+            CREATE TABLE IF NOT EXISTS product_inquiries (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                supply_list_id UUID REFERENCES supply_lists(id) ON DELETE SET NULL,
+                producto VARCHAR(200) NOT NULL,
+                detalle VARCHAR(1000),
+                nombre VARCHAR(120),
+                contacto VARCHAR(150),
+                estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+                respuesta VARCHAR(1000),
+                respondida_por UUID REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                respondida_at TIMESTAMPTZ
+            );
+            CREATE INDEX IF NOT EXISTS idx_product_inquiries_estado ON product_inquiries(estado, created_at);
+            CREATE INDEX IF NOT EXISTS idx_product_inquiries_user ON product_inquiries(user_id);
+
             -- Configuración de la tienda (una sola fila). Se edita en Admin > Configuración (PUT /api/settings).
             CREATE TABLE IF NOT EXISTS store_settings (
                 id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),

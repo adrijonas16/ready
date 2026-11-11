@@ -52,6 +52,29 @@ AI__Model=claude-sonnet-5-5      # opcional
 - `POST /api/lists/{id}/reprocess` vuelve a leer una lista.
 - Las columnas nuevas se crean solas al arrancar (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
 
+## Copias por alumno y consultas de productos
+
+**Copias por alumno.** Una familia puede armar varias copias de la misma lista del colegio (una por hijo).
+El nombre del alumno va en `extras.etiquetas.nombre` y separa la lista en el carrito y en el pedido (`order_items.para`).
+`DELETE /api/lists/{id}/copia` borra una copia propia: solo copias (`copia_de` no nulo) y, si la copia es de una cuenta,
+solo su dueño o ADMIN/OPERATOR. Los pedidos ya hechos no se tocan; solo pierden la referencia a la lista.
+
+**Consultas de productos** (tabla `product_inquiries`). Si un cliente no encuentra un útil, pregunta si lo podemos
+conseguir y se le responde sí o no en menos de 24 horas.
+
+| Endpoint | Quién | Qué hace |
+|---|---|---|
+| `POST /api/consultas` | público (10 por hora por IP, anti-spam) | `{ producto, detalle?, nombre?, contacto?, supplyListId? }`. Sin sesión, `nombre` y `contacto` (correo o celular de 9 dígitos) son obligatorios. Máximo 10 sin responder por persona. |
+| `GET /api/consultas/mias` | cliente con sesión | Sus consultas. |
+| `GET /api/consultas/{id}` | quien tiene el id | Sin sesión, el id lo guarda el navegador; si la consulta es de una cuenta, solo la ve su dueño o la tienda. |
+| `GET /api/consultas?estado=` | ADMIN/OPERATOR | Pendientes primero (la más antigua arriba). `estado`: `PENDIENTE`, `DISPONIBLE` o `NO_DISPONIBLE`. |
+| `PUT /api/consultas/{id}/respuesta` | ADMIN/OPERATOR | `{ disponible: true/false, respuesta? }`. Se puede corregir después. Avisa al cliente con cuenta (SignalR `InquiryAnswered`). |
+
+Cada consulta nueva avisa al panel (SignalR `NewInquiry`). Se responde en Admin > Consultas; el cliente ve la respuesta en `/consultas`.
+
+**Descripción de las opciones.** `product_variant_values.description` (hasta 1000 caracteres) se edita en
+Admin > Productos > Variantes y se muestra en la ficha del producto al elegir esa opción.
+
 ## Poner la tienda en producción
 
 La API crea sola todas las tablas al arrancar y, si la base está vacía, carga el catálogo

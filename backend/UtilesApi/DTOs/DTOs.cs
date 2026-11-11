@@ -361,3 +361,42 @@ public class AuthResponse
     public string Token { get; set; } = string.Empty;
     public UserResponse User { get; set; } = new();
 }
+
+/// <summary>El cliente pregunta si podemos conseguir un producto que no encontró.</summary>
+public class CrearConsultaRequest
+{
+    public string? Producto { get; set; }
+    public string? Detalle { get; set; }
+    /// <summary>Solo sin sesión: cómo se llama y cómo avisarle (correo o celular).</summary>
+    public string? Nombre { get; set; }
+    public string? Contacto { get; set; }
+    /// <summary>Lista desde la que pregunta (opcional), para ubicar el pedido.</summary>
+    public Guid? SupplyListId { get; set; }
+}
+
+public class ResponderConsultaRequest
+{
+    /// <summary>true = sí lo conseguimos; false = no.</summary>
+    public bool? Disponible { get; set; }
+    /// <summary>Mensaje opcional para el cliente (precio, marca, plazo…).</summary>
+    public string? Respuesta { get; set; }
+}
+
+public class ConsultaResponse
+{
+    public Guid Id { get; set; }
+    public string Producto { get; set; } = string.Empty;
+    public string? Detalle { get; set; }
+    public string Estado { get; set; } = string.Empty;
+    public string? Respuesta { get; set; }
+    public DateTime CreatedAt { get; set; }
+    /// <summary>Plazo de respuesta: 24 horas desde que se hizo la consulta.</summary>
+    public DateTime VenceAt { get; set; }
+    public DateTime? RespondidaAt { get; set; }
+    public Guid? SupplyListId { get; set; }
+    // Solo para el panel (null para el cliente)
+    public string? Nombre { get; set; }
+    public string? Contacto { get; set; }
+    public string? UserEmail { get; set; }
+    public string? UserPhone { get; set; }
+}

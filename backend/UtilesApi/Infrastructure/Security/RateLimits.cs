@@ -17,6 +17,7 @@ public static class RateLimits
     public const string Observaciones = "observaciones";
     public const string Items = "items";
     public const string Orders = "orders";
+    public const string Consultas = "consultas";
 
     public const string MensajeLimite = "Demasiados intentos. Espera un momento.";
 
@@ -55,6 +56,7 @@ public static class RateLimits
             options.AddPolicy(Observaciones, ctx => habilitado ? PorIp(ctx, Observaciones, 30, TimeSpan.FromMinutes(10)) : RateLimitPartition.GetNoLimiter(Observaciones));
             options.AddPolicy(Items, ctx => habilitado ? PorIp(ctx, Items, 30, TimeSpan.FromMinutes(10)) : RateLimitPartition.GetNoLimiter(Items));
             options.AddPolicy(Orders, ctx => habilitado ? PorIp(ctx, Orders, 10, TimeSpan.FromMinutes(10)) : RateLimitPartition.GetNoLimiter(Orders));
+            options.AddPolicy(Consultas, ctx => habilitado ? PorIp(ctx, Consultas, 10, TimeSpan.FromHours(1)) : RateLimitPartition.GetNoLimiter(Consultas));
 
             options.OnRejected = async (context, token) =>
             {

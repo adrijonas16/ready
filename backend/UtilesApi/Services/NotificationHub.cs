@@ -30,6 +30,8 @@ public interface INotificationService
     Task NotifyNewMessage(string fromName, string message);
     Task NotifyOrderStatusChange(string userId, string orderId, string newStatus);
     Task NotifyListReady(string userId, string listId);
+    Task NotifyNewInquiry(string inquiryId, string producto, string fromName);
+    Task NotifyInquiryAnswered(string userId, string inquiryId, string producto, bool disponible);
 }
 
 public class NotificationService : INotificationService
@@ -120,6 +122,29 @@ public class NotificationService : INotificationService
             type = "list_ready",
             listId,
             message = "Tu lista de útiles fue aprobada. Ya puedes elegir tu opción y comprar.",
+            timestamp = DateTime.UtcNow
+        });
+    }
+
+    public async Task NotifyNewInquiry(string inquiryId, string producto, string fromName)
+    {
+        await _hub.Clients.Group("admins").SendAsync("NewInquiry", new
+        {
+            type = "new_inquiry",
+            inquiryId,
+            message = $"{fromName} pregunta si podemos conseguir: {producto}",
+            timestamp = DateTime.UtcNow
+        });
+    }
+
+    public async Task NotifyInquiryAnswered(string userId, string inquiryId, string producto, bool disponible)
+    {
+        await _hub.Clients.Group($"user-{userId}").SendAsync("InquiryAnswered", new
+        {
+            type = "inquiry_answered",
+            inquiryId,
+            disponible,
+            message = disponible ? $"¡Sí conseguimos {producto}! Mira la respuesta en Mis consultas." : $"No pudimos conseguir {producto}. Mira la respuesta en Mis consultas.",
             timestamp = DateTime.UtcNow
         });
     }

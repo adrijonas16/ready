@@ -13,6 +13,7 @@ namespace UtilesApi.Controllers;
 public class ProductVariantsController : ControllerBase
 {
     private readonly IDbConnectionFactory _db;
+    public const int MaxDescripcion = 1000;
 
     public ProductVariantsController(IDbConnectionFactory db)
     {
@@ -36,7 +37,7 @@ public class ProductVariantsController : ControllerBase
         foreach (var t in types)
         {
             var values = await conn.QueryAsync<dynamic>(@"
-                SELECT id, value, image_url, price_modifier, stock, display_order, is_active, color_hex
+                SELECT id, value, image_url, price_modifier, stock, display_order, is_active, color_hex, description
                 FROM product_variant_values
                 WHERE variant_type_id = @TypeId
                 ORDER BY display_order", new { TypeId = (Guid)t.id });
@@ -70,20 +71,22 @@ public class ProductVariantsController : ControllerBase
             return BadRequest(ApiResponse<Guid>.Fail("INVALID", "Escribe la opción (hasta 100 caracteres)"));
         if (req.Stock < 0) return BadRequest(ApiResponse<Guid>.Fail("INVALID", "El stock no puede ser negativo"));
         if (req.PriceModifier is < -10000 or > 10000) return BadRequest(ApiResponse<Guid>.Fail("INVALID", "El recargo está fuera de rango"));
+        if (!Validacion.Largo(req.Description, MaxDescripcion) || !Validacion.SinControl(req.Description))
+            return BadRequest(ApiResponse<Guid>.Fail("INVALID", $"La descripción puede tener hasta {MaxDescripcion} caracteres"));
         using var conn = _db.CreateConnection();
         var tipoDelProducto = await conn.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM product_variant_types WHERE id = @TypeId AND product_id = @ProductId", new { TypeId = typeId, ProductId = productId });
         if (tipoDelProducto == 0) return NotFound(ApiResponse<Guid>.Fail("NOT_FOUND", "Tipo de variante no encontrado"));
         var id = await conn.ExecuteScalarAsync<Guid>(@"
-            INSERT INTO product_variant_values (variant_type_id, value, image_url, price_modifier, stock, display_order, color_hex)
-            VALUES (@TypeId, @Value, @ImageUrl, @PriceModifier, @Stock, @DisplayOrder, @ColorHex)
-            RETURNING id", new { TypeId = typeId, req.Value, req.ImageUrl, req.PriceModifier, req.Stock, req.DisplayOrder, req.ColorHex });
+            INSERT INTO product_variant_values (variant_type_id, value, image_url, price_modifier, stock, display_order, color_hex, description)
+            VALUES (@TypeId, @Value, @ImageUrl, @PriceModifier, @Stock, @DisplayOrder, @ColorHex, @Description)
+            RETURNING id", new { TypeId = typeId, req.Value, req.ImageUrl, req.PriceModifier, req.Stock, req.DisplayOrder, req.ColorHex,
+                Description = string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim() });
 
         return Ok(ApiResponse<Guid>.Ok(id));
     }
 
-    // PUT update variant value
-    // PUT update variant value: {value, colorHex, priceModifier, stock, isActive, imageUrl}; null = no cambia, "" = quitar (colorHex/imageUrl)
+    // PUT update variant value: {value, colorHex, priceModifier, stock, isActive, imageUrl, description}; null = no cambia, "" = quitar (colorHex/imageUrl/description)
     [HttpPut("values/{valueId}")]
     [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> UpdateVariantValue(Guid productId, Guid valueId, [FromBody] UpdateVariantValueRequest req)
@@ -96,6 +99,8 @@ public class ProductVariantsController : ControllerBase
             return BadRequest(ApiResponse<bool>.Fail("INVALID_PRICE", "El recargo está fuera de rango"));
         if (req.Value != null && req.Value.Length > 100)
             return BadRequest(ApiResponse<bool>.Fail("INVALID_VALUE", "La opción puede tener hasta 100 caracteres"));
+        if (!Validacion.Largo(req.Description, MaxDescripcion) || !Validacion.SinControl(req.Description))
+            return BadRequest(ApiResponse<bool>.Fail("INVALID_DESCRIPTION", $"La descripción puede tener hasta {MaxDescripcion} caracteres"));
 
         using var conn = _db.CreateConnection();
         var filas = await conn.ExecuteAsync(@"
@@ -105,10 +110,11 @@ public class ProductVariantsController : ControllerBase
                 price_modifier = COALESCE(@PriceModifier, price_modifier),
                 stock = COALESCE(@Stock, stock),
                 is_active = COALESCE(@IsActive, is_active),
-                color_hex = CASE WHEN @ColorHex IS NULL THEN color_hex ELSE NULLIF(@ColorHex, '') END
+                color_hex = CASE WHEN @ColorHex IS NULL THEN color_hex ELSE NULLIF(@ColorHex, '') END,
+                description = CASE WHEN @Description IS NULL THEN description ELSE NULLIF(@Description, '') END
             WHERE id = @Id
               AND variant_type_id IN (SELECT id FROM product_variant_types WHERE product_id = @ProductId)",
-            new { Id = valueId, ProductId = productId, Value = req.Value?.Trim(), req.ImageUrl, req.PriceModifier, req.Stock, req.IsActive, req.ColorHex });
+            new { Id = valueId, ProductId = productId, Value = req.Value?.Trim(), req.ImageUrl, req.PriceModifier, req.Stock, req.IsActive, req.ColorHex, Description = req.Description?.Trim() });
 
         if (filas == 0) return NotFound(ApiResponse<bool>.Fail("NOT_FOUND", "Opción no encontrada"));
         return Ok(ApiResponse<bool>.Ok(true));
@@ -293,6 +299,7 @@ public class CreateVariantValueRequest
     public int Stock { get; set; }
     public int DisplayOrder { get; set; }
     public string? ColorHex { get; set; }
+    public string? Description { get; set; }
 }
 
 public class UpdateVariantValueRequest
@@ -303,4 +310,5 @@ public class UpdateVariantValueRequest
     public int? Stock { get; set; }
     public bool? IsActive { get; set; }
     public string? ColorHex { get; set; }
+    public string? Description { get; set; }
 }
