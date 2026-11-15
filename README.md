@@ -112,6 +112,16 @@ arrancar la API (queda en `seed_runs`).
   `python3 scripts/generar_seed_padron_distritos.py archivo.xlsx lima-callao-2026` — el departamento sale de cada
   fila (Callao queda como departamento Callao) y un colegio es "nombre + distrito".
 
+## Catálogo de productos desde Excel
+
+`python3 scripts/generar_seed_productos.py archivo.xlsx catalogo-2026` genera
+`Infrastructure/Database/seed-productos-catalogo-2026.sql` (formato "Catálogo con precio": una fila por SKU). Al
+arrancar, la API lo corre una sola vez y **solo agrega códigos nuevos** (RD-<código de la fuente>): no cambia
+precios ni stock que ya se hayan editado en el panel. El script corrige los precios (el Excel los guarda con formato
+de fecha y las tiendas Shopify divididos entre 100), limpia los nombres, normaliza marcas, asigna una de las
+categorías de la tienda y la gama por tercios de precio dentro de cada familia, y agrupa presentaciones/colores
+como variantes. Stock: 50 si la fuente lo indica disponible, 0 si no.
+
 ## Pedir las listas a los colegios (Admin > Pedir listas)
 
 Cada colegio tiene sus datos de contacto (WhatsApp, teléfono, correo, nombre del contacto, notas) y un seguimiento:

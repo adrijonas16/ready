@@ -519,9 +519,10 @@ public class DatabaseInitializer
         CorrerUnaVez(connection, "contactos-colegios-2026-11", "seed-contactos-colegios.sql");
 
         // Los demás departamentos (scripts/generar_seed_colegios.py --departamento ...): primero los colegios,
-        // después sus contactos. Cada archivo se corre una vez; para recargar uno, se genera con otro nombre.
+        // después sus contactos; al final, los productos del catálogo (seed-productos-*.sql, solo agregan códigos nuevos).
+        // Cada archivo se corre una vez; para recargar uno, se genera con otro nombre.
         var recursos = typeof(DatabaseInitializer).Assembly.GetManifestResourceNames();
-        foreach (var prefijo in new[] { "seed-colegios-", "seed-contactos-" })
+        foreach (var prefijo in new[] { "seed-colegios-", "seed-contactos-", "seed-productos-" })
             foreach (var recurso in recursos.Where(r => r.StartsWith(prefijo) && r.EndsWith(".sql")
                          && r is not "seed-colegios-arequipa.sql" and not "seed-contactos-colegios.sql").OrderBy(r => r, StringComparer.Ordinal))
                 CorrerUnaVez(connection, recurso[..^4], recurso);

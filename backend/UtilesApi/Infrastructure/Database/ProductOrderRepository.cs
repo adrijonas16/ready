@@ -84,7 +84,7 @@ public class ProductRepository
         }
 
         sql += " ORDER BY p.name LIMIT @Limit";
-        parameters.Add("Limit", Math.Clamp(limit, 1, 2000));
+        parameters.Add("Limit", Math.Clamp(limit, 1, 10000));
 
         return await connection.QueryAsync<Product>(sql, parameters);
     }

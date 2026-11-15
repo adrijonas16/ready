@@ -22,6 +22,8 @@
     <!-- Colegios y contactos por departamento: cada archivo se corre una sola vez (ver DatabaseInitializer) -->
     <EmbeddedResource Include="Infrastructure/Database/seed-colegios-*.sql" LogicalName="%(Filename)%(Extension)" />
     <EmbeddedResource Include="Infrastructure/Database/seed-contactos-*.sql" LogicalName="%(Filename)%(Extension)" />
+    <!-- Productos del catálogo (scripts/generar_seed_productos.py): cada archivo se corre una sola vez -->
+    <EmbeddedResource Include="Infrastructure/Database/seed-productos-*.sql" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>
