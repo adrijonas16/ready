@@ -383,6 +383,9 @@ public class DatabaseInitializer
             UPDATE schools SET provincia = 'Arequipa', distrito = 'Arequipa'
             WHERE departamento = 'Arequipa' AND provincia IS NULL AND codigo_modular IS NOT NULL;
             ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_departamento VARCHAR(40);
+            -- Subcategoría dentro de la categoría (Arte › Témperas): menú de categorías y filtros del catálogo
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100);
+            CREATE INDEX IF NOT EXISTS idx_products_categoria_sub ON products(category, subcategory) WHERE is_active;
             -- Conteo de listas por colegio (Admin > Pedir listas, con miles de colegios)
             CREATE INDEX IF NOT EXISTS idx_supply_lists_school ON supply_lists(school_id, year);
 

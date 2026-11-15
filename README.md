@@ -120,7 +120,9 @@ arrancar, la API lo corre una sola vez y **solo agrega códigos nuevos** (RD-<c�
 precios ni stock que ya se hayan editado en el panel. El script corrige los precios (el Excel los guarda con formato
 de fecha y las tiendas Shopify divididos entre 100), limpia los nombres, normaliza marcas, asigna una de las
 categorías de la tienda y la gama por tercios de precio dentro de cada familia, y agrupa presentaciones/colores
-como variantes. Stock: 50 si la fuente lo indica disponible, 0 si no.
+como variantes. Stock: 50 si la fuente lo indica disponible, 0 si no. También asigna una **subcategoría**
+(`products.subcategory`, p. ej. Arte › Témperas) que alimenta el menú "Categorías" (`GET /api/categories/arbol`); el
+archivo `…-subcategorias.sql` la completa en bases donde el catálogo ya estaba cargado.
 
 ## Pedir las listas a los colegios (Admin > Pedir listas)
 

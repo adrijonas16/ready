@@ -485,6 +485,33 @@ public class CategoriesController : ControllerBase
         return Ok(ApiResponse<IEnumerable<object>>.Ok(cats.Select(c => new { c.Id, c.Name })));
     }
 
+    /// <summary>
+    /// Categorías con sus subcategorías y cuántos productos activos tiene cada una (menú "Categorías" de la tienda).
+    /// Sin "Servicios", que no se vende suelto. Los productos sin subcategoría solo suman al total de su categoría.
+    /// </summary>
+    [HttpGet("arbol")]
+    [ResponseCache(Duration = 120, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult<ApiResponse<IEnumerable<CategoriaArbol>>>> Arbol()
+    {
+        using var conn = HttpContext.RequestServices.GetRequiredService<IDbConnectionFactory>().CreateConnection();
+        var filas = await Dapper.SqlMapper.QueryAsync<(string Categoria, string? Sub, int Total)>(conn, @"
+            SELECT category, NULLIF(TRIM(subcategory), ''), COUNT(*)::int
+            FROM products
+            WHERE is_active AND category <> 'Servicios'
+            GROUP BY 1, 2");
+        var orden = StringComparer.Create(new System.Globalization.CultureInfo("es-PE"), true);
+        var arbol = filas.GroupBy(f => f.Categoria)
+            .Select(g => new CategoriaArbol
+            {
+                Nombre = g.Key,
+                Total = g.Sum(f => f.Total),
+                Subcategorias = g.Where(f => f.Sub != null).OrderBy(f => f.Sub, orden)
+                    .Select(f => new SubcategoriaArbol { Nombre = f.Sub!, Total = f.Total }).ToList()
+            })
+            .OrderBy(c => c.Nombre, orden);
+        return Ok(ApiResponse<IEnumerable<CategoriaArbol>>.Ok(arbol));
+    }
+
     [HttpPost]
     [Authorize(Roles = AppRoles.Staff)]
     public async Task<IActionResult> Create([FromBody] CreateCategoryRequest req)
@@ -525,6 +552,19 @@ public class CategoriesController : ControllerBase
 }
 
 public class CreateCategoryRequest { public string Name { get; set; } = ""; }
+
+public class CategoriaArbol
+{
+    public string Nombre { get; set; } = string.Empty;
+    public int Total { get; set; }
+    public List<SubcategoriaArbol> Subcategorias { get; set; } = new();
+}
+
+public class SubcategoriaArbol
+{
+    public string Nombre { get; set; } = string.Empty;
+    public int Total { get; set; }
+}
 
 public class SetSchoolSectionsRequest
 {

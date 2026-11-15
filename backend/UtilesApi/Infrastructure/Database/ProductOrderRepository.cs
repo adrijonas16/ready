@@ -115,11 +115,11 @@ public class ProductRepository
     {
         using var connection = _db.CreateConnection();
         var id = await connection.ExecuteScalarAsync<Guid>(@"
-            INSERT INTO products (name, description, category, brand, sku, base_price, image_url, stock, attributes, is_active, tier)
-            VALUES (@Name, @Description, @Category, @Brand, NULLIF(@Sku, ''), @BasePrice, @ImageUrl, @Stock, @Attributes::jsonb, @IsActive, @Tier)
+            INSERT INTO products (name, description, category, subcategory, brand, sku, base_price, image_url, stock, attributes, is_active, tier)
+            VALUES (@Name, @Description, @Category, @Subcategory, @Brand, NULLIF(@Sku, ''), @BasePrice, @ImageUrl, @Stock, @Attributes::jsonb, @IsActive, @Tier)
             RETURNING id", new
         {
-            product.Name, product.Description, product.Category, product.Brand, product.Sku, product.BasePrice,
+            product.Name, product.Description, product.Category, product.Subcategory, product.Brand, product.Sku, product.BasePrice,
             product.ImageUrl, product.Stock, product.Attributes, product.IsActive, product.Tier
         });
         return id;
@@ -133,6 +133,7 @@ public class ProductRepository
                 name = @Name,
                 description = @Description,
                 category = @Category,
+                subcategory = @Subcategory,
                 brand = @Brand,
                 sku = NULLIF(@Sku, ''),
                 base_price = @BasePrice,
@@ -144,7 +145,7 @@ public class ProductRepository
                 updated_at = NOW()
             WHERE id = @Id", new
         {
-            product.Id, product.Name, product.Description, product.Category, product.Brand, product.Sku, product.BasePrice,
+            product.Id, product.Name, product.Description, product.Category, product.Subcategory, product.Brand, product.Sku, product.BasePrice,
             product.ImageUrl, product.Stock, product.Attributes, product.IsActive, product.Tier
         });
     }

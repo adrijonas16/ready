@@ -141,6 +141,7 @@ public class Product
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Category { get; set; } = string.Empty;
+    public string? Subcategory { get; set; }
     public string? Brand { get; set; }
     public string Sku { get; set; } = string.Empty;
     public decimal BasePrice { get; set; }

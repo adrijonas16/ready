@@ -88,7 +88,7 @@ public class ProductsController : ControllerBase
 
         return Ok(ApiResponse<object>.Ok(new
         {
-            product.Id, product.Name, product.Description, product.Category, product.Brand,
+            product.Id, product.Name, product.Description, product.Category, product.Subcategory, product.Brand,
             product.Sku, product.BasePrice, product.ImageUrl, product.Stock, product.Attributes,
             product.Rating, product.Tier, product.SaleUnit, product.UnitQuantity,
             product.IsActive, product.SalePrice, product.CampaignSlug,
@@ -108,6 +108,7 @@ public class ProductsController : ControllerBase
             Name = request.Name.Trim(),
             Description = request.Description,
             Category = request.Category.Trim(),
+            Subcategory = string.IsNullOrWhiteSpace(request.Subcategory) ? null : request.Subcategory.Trim(),
             Brand = string.IsNullOrWhiteSpace(request.Brand) ? null : request.Brand.Trim(),
             Sku = request.Sku?.Trim() ?? string.Empty,
             BasePrice = request.BasePrice,
@@ -155,6 +156,7 @@ public class ProductsController : ControllerBase
         if (request.ImageUrl != null) product.ImageUrl = request.ImageUrl == "" ? null : request.ImageUrl;
         if (request.Attributes != null) product.Attributes = request.Attributes == "" ? null : request.Attributes;
         if (request.Tier != null) product.Tier = request.Tier.Trim().ToLowerInvariant();
+        if (request.Subcategory != null) product.Subcategory = request.Subcategory.Trim() == "" ? null : request.Subcategory.Trim();
         if (request.IsActive.HasValue) product.IsActive = request.IsActive.Value;
 
         try { await _productRepo.Update(product); }
@@ -198,6 +200,7 @@ public class ProductsController : ControllerBase
         if (r.BasePrice < 0) return "El precio no puede ser negativo";
         if (r.BasePrice > 100000) return "El precio es demasiado alto";
         if (r.Stock < 0) return "El stock no puede ser negativo";
+        if (!Validacion.Largo(r.Subcategory, 100)) return "La subcategoría puede tener hasta 100 caracteres";
         if (!Validacion.Largo(r.Description, 5000)) return "La descripción puede tener hasta 5000 caracteres";
         if (!Validacion.Largo(r.Attributes, 20000)) return "Los atributos son demasiado largos";
         if (r.Tier != null && !Tiers.Contains(r.Tier.Trim().ToLowerInvariant()))
@@ -216,6 +219,8 @@ public class ProductRequest
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Category { get; set; } = string.Empty;
+    /// <summary>Subcategoría dentro de la categoría (Témperas, Plumones…). null = no cambia (PUT); "" = quitar</summary>
+    public string? Subcategory { get; set; }
     public string? Brand { get; set; }
     public string? Sku { get; set; }
     public decimal BasePrice { get; set; }

@@ -109,6 +109,7 @@ public class ProductResponse
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Category { get; set; } = string.Empty;
+    public string? Subcategory { get; set; }
     public string? Brand { get; set; }
     public string Sku { get; set; } = string.Empty;
     public decimal BasePrice { get; set; }
@@ -130,6 +131,7 @@ public class ProductResponse
         Name = p.Name,
         Description = p.Description,
         Category = p.Category,
+        Subcategory = p.Subcategory,
         Brand = p.Brand,
         Sku = p.Sku,
         BasePrice = p.BasePrice,

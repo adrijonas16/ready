@@ -85,6 +85,65 @@ POR_PALABRA = [  # (categoría, palabras al comienzo de alguna palabra del nombr
     ('Papeles', ['papel', 'cartulina', 'hojas']),
 ]
 
+# Familia de la fuente → subcategoría (dentro de su categoría)
+SUB_DE_FAMILIA = {
+    'CUADERNOS Y AGENDAS': 'Cuadernos', 'CUADERNOS THEME BOOK': 'Cuadernos', 'CUADERNOS EMPASTADOS': 'Cuadernos',
+    'CUADERNOS ESPIRALADOS': 'Cuadernos', 'CUADERNOS DE CONTROL': 'Cuadernos', 'CUADERNOS PREMIUM': 'Cuadernos premium',
+    'CUADERNOS D-LUXE': 'Cuadernos premium', 'CUADERNOS DE DIBUJO': 'Cuadernos de dibujo y música',
+    'CUADERNOS DE MUSICA': 'Cuadernos de dibujo y música', 'BLOCKS ESCOLARES': 'Blocks', 'BLOCKS Y HOJAS': 'Blocks',
+    'BLOCKS DE DIBUJO': 'Blocks de dibujo', 'SKETCH BOOK Y BITACORAS': 'Sketchbooks y bitácoras',
+    'COLORES': 'Lápices de colores', 'LAPIZ DE COLOR': 'Lápices de colores', 'PLUMONES': 'Plumones',
+    'RESALTADOR': 'Resaltadores', 'CRAYOLAS': 'Crayolas', 'MARCADORES': 'Marcadores', 'ROTULADORES': 'Marcadores',
+    'COLORES TÉCNICOS': 'Colores profesionales',
+    'PINTURA ACRILICA': 'Pintura acrílica', 'TEMPERAS SUELTAS': 'Témperas', 'TEMPERAS EN ESTUCHES': 'Témperas',
+    'TEMPERAS EN BARRAS': 'Témperas', 'ACUARELAS Y OLEOS': 'Acuarelas y óleos', 'ESTUCHE ACUARELAS Y OLEOS': 'Acuarelas y óleos',
+    'PINCELES Y PALETAS': 'Pinceles, paletas y lienzos', 'LIENZOS Y PINCELES': 'Pinceles, paletas y lienzos',
+    'ACCESORIOS DE ARTE': 'Accesorios de arte', 'PITT GRAPHITE MATT': 'Arte profesional', 'PITT PASTEL': 'Arte profesional',
+    'PITT MONOCHROME': 'Arte profesional', 'PITT ARTIST PEN': 'Arte profesional', 'POLYCHROMOS': 'Arte profesional',
+    'ALBRECHT DURER': 'Arte profesional', 'GRAFITO ACUARELABLE': 'Arte profesional', 'TIZA PASTEL': 'Arte profesional',
+    'MARCADORES Y LIBROS PARA LETTERING': 'Lettering', 'MASAS MOLDEABLES': 'Masas moldeables', 'PLASTILINAS': 'Plastilinas',
+    'MANUALIDADES': 'Manualidades', 'CUERO SPUM': 'Goma EVA y microporoso', 'EVA FOAM': 'Goma EVA y microporoso',
+    'EVA FOAM GLITTER': 'Goma EVA y microporoso',
+    'BOLIGRAFOS TINTA GEL': 'Bolígrafos', 'BOLIGRAFOS TINTA SECA': 'Bolígrafos', 'BOLIGRAFOS BORRABLES': 'Bolígrafos',
+    'BOLIGRAFOS INVISIBLES': 'Bolígrafos', 'LAPICES ESCOLARES': 'Lápices', 'CASTELL 9000': 'Lápices', 'LAPICES TECNICOS': 'Lápices',
+    'PORTAMINAS Y MINAS': 'Portaminas y minas', 'PORTAMINAS': 'Portaminas y minas', 'CORRECTORES': 'Correctores',
+    'BORRADORES': 'Borradores', 'LIMPIATIPOS': 'Borradores', 'TAJADORES': 'Tajadores', 'TIZAS': 'Tizas',
+    'CINTAS ADHESIVAS': 'Cintas adhesivas', 'PEGAMENTOS Y SILICONAS': 'Gomas y siliconas',
+    'ETIQUETAS AUTOADHESIVAS': 'Etiquetas y stickers', 'ETIQUETAS AUTOADHESIVAS CON DISEÑO': 'Etiquetas y stickers',
+    'PAPEL DE REGALO': 'Papel de regalo', 'CARTULINA PLASTIFICADA': 'Cartulinas', 'CARTULINA METALIZADA': 'Cartulinas',
+    'CARTULINA ESCOLAR': 'Cartulinas', 'CARTULINA FOSFORECENTE': 'Cartulinas', 'CARTULINA HOLOGRAFICA': 'Cartulinas',
+    'CARTULINA DUPLEX': 'Cartulinas', 'CARTULINA': 'Cartulinas', 'PAPEL CREPE': 'Papel crepé', 'PAPEL SEDA': 'Papel seda',
+    'PAPEL LUSTRE': 'Papel lustre', 'PAPEL FOTOGRÁFICO': 'Papel bond y fotográfico', 'PAPEL BOND': 'Papel bond y fotográfico',
+    'BLOCKS DE MANUALIDADES': 'Blocks de manualidades', 'FICHAS BIBLIOGRAFICAS': 'Otros papeles',
+    'PAPEL ARCOIRIS': 'Otros papeles', 'PAPEL OROPEL': 'Otros papeles', 'PAPEL CELOFAN': 'Otros papeles',
+    'PAPEL KRAFT': 'Otros papeles', 'CARTÓN CORRUGADO': 'Otros papeles', 'PAPELOGRAFO': 'Otros papeles',
+    'INGLES': 'Inglés', 'MATEMÁTICAS': 'Matemática', 'COMUNICACIÓN': 'Comunicación', 'PLAN LECTOR': 'Plan lector',
+    'CIENCIA Y TECNOLOGÍA': 'Ciencia y Tecnología',
+    'TIJERAS': 'Tijeras', 'REGLAS Y ESCUADRAS': 'Reglas y geometría', 'COMPASES': 'Reglas y geometría',
+    'GEOMETRÍA Y CORTE': 'Reglas y geometría', 'FOLDER PLASTICO COLOR ENTERO': 'Folders', 'FOLDER PLASTICO CON DISEÑOS': 'Folders',
+    'FOLDER PLASTICO CON LICENCIA': 'Folders', 'FOLDERS Y ORGANIZACIÓN': 'Folders', 'FOLDERS CON LIGA': 'Folders',
+    'FORROS': 'Forros', 'PIZARRAS Y MOTAS': 'Pizarras', 'MISCELANEA': 'Otros útiles', 'KAWAII': 'Otros útiles',
+    'TABLA DE PUNZADO': 'Otros útiles',
+}
+# Familias genéricas: subcategoría por palabras del nombre, dentro de la categoría ya elegida
+SUB_POR_PALABRA = {
+    'Cuadernos': [('Blocks', ['block']), ('Cuadernos', [''])],
+    'Colores': [('Plumones', ['plumon']), ('Resaltadores', ['resaltador']), ('Crayolas', ['crayola', 'crayon']),
+                ('Marcadores', ['marcador']), ('Lápices de colores', [''])],
+    'Arte': [('Plastilinas', ['plastilina']), ('Témperas', ['tempera']), ('Acuarelas y óleos', ['acuarela', 'oleo']),
+             ('Pinceles, paletas y lienzos', ['pincel', 'paleta', 'lienzo']), ('Masas moldeables', ['masa', 'arcilla']),
+             ('Goma EVA y microporoso', ['eva', 'microporoso']), ('Manualidades', [''])],
+    'Escritura': [('Borradores', ['borrador']), ('Tajadores', ['tajador']), ('Correctores', ['corrector']),
+                  ('Portaminas y minas', ['portaminas', 'minas']), ('Bolígrafos', ['boligrafo', 'lapicero']),
+                  ('Tizas', ['tiza']), ('Lápices', [''])],
+    'Pegar': [('Cintas adhesivas', ['cinta']), ('Etiquetas y stickers', ['etiqueta', 'sticker']), ('Gomas y siliconas', [''])],
+    'Papeles': [('Cartulinas', ['cartulina']), ('Papel crepé', ['crepe']), ('Papel seda', ['seda']), ('Papel lustre', ['lustre']),
+                ('Papel de regalo', ['regalo']), ('Papel bond y fotográfico', ['bond', 'fotografico']), ('Otros papeles', [''])],
+    'Libros': [('Diccionarios', ['diccionario']), ('Otros libros', [''])],
+    'Útiles': [('Tijeras', ['tijera']), ('Reglas y geometría', ['regla', 'escuadra', 'transportador', 'compas']),
+               ('Folders', ['folder', 'archivador', 'sobre']), ('Forros', ['forro']), ('Pizarras', ['pizarra']), ('Otros útiles', [''])],
+}
+
 TILDES = {
     'oleo': 'óleo', 'lapiz': 'lápiz', 'lapices': 'lápices', 'boligrafo': 'bolígrafo', 'boligrafos': 'bolígrafos',
     'plastico': 'plástico', 'plastica': 'plástica', 'circulos': 'círculos', 'papelografo': 'papelógrafo', 'matematica': 'matemática',
@@ -189,6 +248,17 @@ def categoria(familia: str, nombre: str) -> str:
     return 'Útiles'
 
 
+def subcategoria(cat: str, familia: str, nombre: str) -> str:
+    f = (familia or '').strip().upper()
+    if f in SUB_DE_FAMILIA and f not in GENERICAS:
+        return SUB_DE_FAMILIA[f]
+    palabras = sin_tildes(nombre.lower()).split()
+    for sub, claves in SUB_POR_PALABRA[cat]:
+        if any(k == '' or any(p.startswith(k) for p in palabras) for k in claves):
+            return sub
+    return 'Otros útiles'
+
+
 def slug(texto: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', sin_tildes(texto.lower())).strip('-')
 
@@ -222,6 +292,7 @@ def main(ruta: str, nombre_seed: str):
         marca = marca_de(str(r0[1] or ''))
         nombre = nombre_legible(str(r0[3]), marca)
         cat = categoria(str(r0[2] or ''), nombre)
+        sub = subcategoria(cat, str(r0[2] or ''), nombre)
         precios = [precio(r[6], fuente) for r in rs]
         if any(p is None for p in precios):
             continue
@@ -234,7 +305,7 @@ def main(ruta: str, nombre_seed: str):
         imagen = next((str(r[12]).strip() for r in rs if r[12]), None)
         con_variantes = len(rs) > 1
         productos.append({
-            'sku': sku, 'nombre': nombre, 'categoria': cat, 'familia': str(r0[2] or '').strip().upper(), 'marca': marca,
+            'sku': sku, 'nombre': nombre, 'categoria': cat, 'sub': sub, 'familia': str(r0[2] or '').strip().upper(), 'marca': marca,
             'precio': base, 'imagen': imagen, 'stock': STOCK_DISPONIBLE if any(disponibles) else 0, 'activo': base > 0,
         })
         if con_variantes:
@@ -267,7 +338,7 @@ def main(ruta: str, nombre_seed: str):
           f'{agotados} agotados; {len(marcas)} marcas', file=sys.stderr)
 
     filas_p = ',\n'.join(
-        f"  ({sql(p['sku'])}, {sql(p['nombre'])}, {sql(p['categoria'])}, {sql(p['marca'])}, {p['precio']}, {sql(p['imagen'])}, "
+        f"  ({sql(p['sku'])}, {sql(p['nombre'])}, {sql(p['categoria'])}, {sql(p['sub'])}, {sql(p['marca'])}, {p['precio']}, {sql(p['imagen'])}, "
         f"{p['stock']}, {sql(p['gama'])}, {'TRUE' if p['activo'] else 'FALSE'})" for p in productos)
     filas_v = ',\n'.join(
         f"  ({sql(v['sku'])}, {sql(v['tipo'])}, {sql(v['valor'])}, {v['mod']}, {v['stock']}, {sql(v['imagen'])}, {v['orden']})"
@@ -281,13 +352,13 @@ def main(ruta: str, nombre_seed: str):
 INSERT INTO categories (name) VALUES {', '.join(f'({sql(c)})' for c in sorted(cuenta))} ON CONFLICT (name) DO NOTHING;
 INSERT INTO brands (name) VALUES {', '.join(f'({sql(m)})' for m in marcas)} ON CONFLICT (name) DO NOTHING;
 
-CREATE TEMP TABLE _productos (sku VARCHAR(100), nombre TEXT, categoria VARCHAR(100), marca VARCHAR(100), precio DECIMAL(10,2),
+CREATE TEMP TABLE _productos (sku VARCHAR(100), nombre TEXT, categoria VARCHAR(100), sub VARCHAR(100), marca VARCHAR(100), precio DECIMAL(10,2),
                               imagen TEXT, stock INT, gama VARCHAR(20), activo BOOLEAN) ON COMMIT DROP;
 INSERT INTO _productos VALUES
 {filas_p};
 
-INSERT INTO products (name, category, brand, sku, base_price, image_url, stock, tier, is_active)
-SELECT nombre, categoria, marca, sku, precio, imagen, stock, gama, activo
+INSERT INTO products (name, category, subcategory, brand, sku, base_price, image_url, stock, tier, is_active)
+SELECT nombre, categoria, sub, marca, sku, precio, imagen, stock, gama, activo
 FROM _productos c
 WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.sku = c.sku);
 """
@@ -316,6 +387,25 @@ WHERE NOT EXISTS (SELECT 1 FROM product_variant_values x WHERE x.variant_type_id
     with open(destino, 'w', encoding='utf-8') as f:
         f.write(contenido)
     print(f'Escrito {os.path.normpath(destino)}', file=sys.stderr)
+
+    # Subcategorías para una base donde el catálogo ya se cargó (solo completa las vacías)
+    subs = defaultdict(int)
+    for p in productos:
+        subs[(p['categoria'], p['sub'])] += 1
+    print(f'{len(subs)} subcategorías: ' + '; '.join(f'{c} › {s} ({n})' for (c, s), n in sorted(subs.items())), file=sys.stderr)
+    filas_s = ',\n'.join(f"  ({sql(p['sku'])}, {sql(p['sub'])})" for p in productos)
+    destino_s = destino.replace('.sql', '-subcategorias.sql')
+    with open(destino_s, 'w', encoding='utf-8') as f:
+        f.write(f"""-- Generado por scripts/generar_seed_productos.py: subcategoría de cada producto del catálogo, por su código.
+-- Lo corre DatabaseInitializer una sola vez. Solo completa productos sin subcategoría (no pisa lo editado en el panel).
+
+UPDATE products p SET subcategory = v.sub, updated_at = NOW()
+FROM (VALUES
+{filas_s}
+) AS v(sku, sub)
+WHERE p.sku = v.sku AND (p.subcategory IS NULL OR p.subcategory = '');
+""")
+    print(f'Escrito {os.path.normpath(destino_s)}', file=sys.stderr)
 
 
 if __name__ == '__main__':
